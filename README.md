@@ -87,6 +87,7 @@ Build release binaries locally for download:
 ```
 
 This creates runtime-specific zip files in `release-assets/`.
+Release builds are produced without PDB debug symbol files.
 
 ---
 
