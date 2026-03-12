@@ -6,6 +6,12 @@ class Program
 {
     static void Main(string[] args)
     {
+        if (args.Length > 0 && args[0] == "--inspect")
+        {
+            InspectSaveFile(args[1]);
+            return;
+        }
+
         Console.WriteLine("=== LCE World Converter ===");
         Console.WriteLine("Converts Java Edition worlds to Minecraft Legacy Console Edition (WIN64) format.\n");
 
@@ -185,7 +191,7 @@ class Program
                 if (!lceRegions.TryGetValue((lrx, lrz), out var lceRegion))
                 {
                     string regionName = $"{lcePrefix}r.{lrx}.{lrz}.mcr";
-                    lceRegion = new LceRegionFile(container, regionName);
+                    lceRegion = new LceRegionFile(regionName);
                     lceRegions[(lrx, lrz)] = lceRegion;
                 }
 
@@ -206,6 +212,92 @@ class Program
         }
         Console.WriteLine($"\r  Progress: 100%  ");
 
+        // Write all buffered region files to the container
+        foreach (var (_, region) in lceRegions)
+            region.WriteTo(container);
+
         return converted;
+    }
+
+    static void InspectSaveFile(string path)
+    {
+        byte[] fileBytes = File.ReadAllBytes(path);
+        Console.WriteLine($"File size: {fileBytes.Length} bytes");
+        Console.WriteLine($"First 16 bytes: {BitConverter.ToString(fileBytes, 0, 16)}");
+        Console.WriteLine($"Bytes 0-3 (compressed flag): {BitConverter.ToInt32(fileBytes, 0)}");
+        Console.WriteLine($"Bytes 4-7 (decomp size): {BitConverter.ToInt32(fileBytes, 4)}");
+        Console.WriteLine();
+
+        using var compStream = new MemoryStream(fileBytes, 8, fileBytes.Length - 8);
+        using var zlib = new System.IO.Compression.ZLibStream(compStream, System.IO.Compression.CompressionMode.Decompress);
+        using var outStream = new MemoryStream();
+        zlib.CopyTo(outStream);
+        byte[] raw = outStream.ToArray();
+
+        Console.WriteLine($"Decompressed size: {raw.Length} bytes");
+        Console.WriteLine($"First 16 bytes: {BitConverter.ToString(raw, 0, Math.Min(16, raw.Length))}");
+        Console.WriteLine();
+
+        uint headerOffset = BitConverter.ToUInt32(raw, 0);
+        uint fileCount = BitConverter.ToUInt32(raw, 4);
+        short origVer = BitConverter.ToInt16(raw, 8);
+        short currVer = BitConverter.ToInt16(raw, 10);
+
+        Console.WriteLine($"Header/footer offset: {headerOffset}");
+        Console.WriteLine($"File count: {fileCount}");
+        Console.WriteLine($"Original save version: {origVer}");
+        Console.WriteLine($"Current save version: {currVer}");
+        Console.WriteLine();
+
+        Console.WriteLine("=== File Table ===");
+        int pos = (int)headerOffset;
+        for (int i = 0; i < (int)Math.Min(fileCount, 50); i++)
+        {
+            string name = System.Text.Encoding.Unicode.GetString(raw, pos, 128).TrimEnd('\0');
+            pos += 128;
+            uint length = BitConverter.ToUInt32(raw, pos); pos += 4;
+            uint startOff = BitConverter.ToUInt32(raw, pos); pos += 4;
+            long lastMod = BitConverter.ToInt64(raw, pos); pos += 8;
+            Console.WriteLine($"  [{i}] \"{name}\" offset={startOff} len={length}");
+        }
+
+        // Check first region file's chunk data header
+        if (fileCount > 1)
+        {
+            // Find first .mcr entry
+            pos = (int)headerOffset;
+            for (int i = 0; i < (int)fileCount; i++)
+            {
+                string name = System.Text.Encoding.Unicode.GetString(raw, pos, 128).TrimEnd('\0');
+                uint len = BitConverter.ToUInt32(raw, pos + 128);
+                uint off = BitConverter.ToUInt32(raw, pos + 132);
+                pos += 144;
+
+                if (name.EndsWith(".mcr") && len > 8192)
+                {
+                    Console.WriteLine($"\n=== Inspecting region: {name} ===");
+                    // Read first non-zero offset from the offset table
+                    for (int ci = 0; ci < 1024; ci++)
+                    {
+                        uint chunkOff = BitConverter.ToUInt32(raw, (int)off + ci * 4);
+                        if (chunkOff != 0)
+                        {
+                            uint sectorNum = chunkOff >> 8;
+                            uint sectorCnt = chunkOff & 0xFF;
+                            int chunkDataPos = (int)(off + sectorNum * 4096);
+                            Console.WriteLine($"  First chunk at offset table index {ci}: sector={sectorNum} count={sectorCnt}");
+                            Console.WriteLine($"  Chunk data at byte {chunkDataPos}:");
+                            Console.WriteLine($"    First 16 bytes: {BitConverter.ToString(raw, chunkDataPos, 16)}");
+                            uint val0 = BitConverter.ToUInt32(raw, chunkDataPos);
+                            uint val1 = BitConverter.ToUInt32(raw, chunkDataPos + 4);
+                            Console.WriteLine($"    Word 0: 0x{val0:X8} ({val0 & 0x7FFFFFFF} bytes, RLE={((val0 & 0x80000000) != 0)})");
+                            Console.WriteLine($"    Word 1: 0x{val1:X8} ({val1} decompressed bytes)");
+                            break;
+                        }
+                    }
+                    break;
+                }
+            }
+        }
     }
 }

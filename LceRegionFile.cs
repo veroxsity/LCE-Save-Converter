@@ -1,18 +1,18 @@
 namespace LceWorldConverter;
 
 /// <summary>
-/// Writes LCE-format region files (.mcr) inside a SaveDataContainer.
-/// Based on RegionFile.cpp from the LCE TU19 source.
+/// Builds an LCE-format region file (.mcr) in memory, then writes
+/// the completed file to a SaveDataContainer in one shot.
 ///
-/// LCE region file layout (same sector structure as Java McRegion):
-///   [4096 bytes] Offset table (1024 x int32)
-///   [4096 bytes] Timestamp table (1024 x int32) 
+/// LCE region file layout:
+///   [4096 bytes] Offset table (1024 x int32, little-endian for WIN64)
+///   [4096 bytes] Timestamp table (1024 x int32)
 ///   [variable]   Chunk data in 4096-byte sectors
 ///
-/// But chunk data format differs from Java:
+/// Chunk data format (differs from Java):
 ///   [4 bytes] Compressed length (high bit = RLE flag)
 ///   [4 bytes] Decompressed length
-///   [variable] RLE+zlib compressed data (WIN64)
+///   [variable] RLE+zlib compressed data
 /// </summary>
 public class LceRegionFile
 {
@@ -20,26 +20,24 @@ public class LceRegionFile
     private const int SECTOR_INTS = SECTOR_BYTES / 4;
     private const int CHUNK_HEADER_SIZE = 8;
 
-    private readonly SaveDataContainer _container;
-    private readonly SaveFileEntry _fileEntry;
+    private readonly string _filename;
+    private readonly MemoryStream _data;
     private readonly int[] _offsets = new int[SECTOR_INTS];
     private readonly int[] _timestamps = new int[SECTOR_INTS];
     private int _sectorCount;
 
-    public LceRegionFile(SaveDataContainer container, string filename)
+    public LceRegionFile(string filename)
     {
-        _container = container;
-        _fileEntry = container.CreateFile(filename);
+        _filename = filename;
+        _data = new MemoryStream();
 
-        // Initialize with two empty sectors (offset table + timestamp table)
+        // Write two empty sectors (offset table + timestamp table)
+        _data.Write(new byte[SECTOR_BYTES * 2]);
         _sectorCount = 2;
-        byte[] emptyData = new byte[SECTOR_BYTES * 2];
-        _container.WriteToFile(_fileEntry, emptyData);
-        _container.SeekFile(_fileEntry, 0); // Reset pointer
     }
 
     /// <summary>
-    /// Write a chunk's uncompressed NBT data at local coords (x, z) within this region.
+    /// Write a chunk's uncompressed NBT data at local coords (x, z).
     /// x and z should be 0-31.
     /// </summary>
     public void WriteChunk(int x, int z, byte[] uncompressedData)
@@ -49,44 +47,55 @@ public class LceRegionFile
 
         // Compress using LCE RLE+zlib
         byte[] compressed = LceCompression.Compress(uncompressedData);
-        int decompLength = uncompressedData.Length;
 
         // Calculate sectors needed
         int totalSize = CHUNK_HEADER_SIZE + compressed.Length;
         int sectorsNeeded = (totalSize + SECTOR_BYTES - 1) / SECTOR_BYTES;
-        if (sectorsNeeded >= 256) return; // Max chunk size check
+        if (sectorsNeeded >= 256) return;
 
-        // Allocate at end of file
+        // Allocate at end
         int sectorNumber = _sectorCount;
         _sectorCount += sectorsNeeded;
 
-        // Write empty sectors to extend the file
-        _container.SeekFileEnd(_fileEntry);
-        byte[] emptySectors = new byte[sectorsNeeded * SECTOR_BYTES];
-        _container.WriteToFile(_fileEntry, emptySectors);
-
-        // Write chunk data at the sector position
-        _container.SeekFile(_fileEntry, (uint)(sectorNumber * SECTOR_BYTES));
+        // Seek to sector position and write chunk data
+        _data.Seek(sectorNumber * SECTOR_BYTES, SeekOrigin.Begin);
 
         // Compressed length with RLE flag (high bit set)
         uint compLengthWithFlag = (uint)compressed.Length | 0x80000000;
-        byte[] header = new byte[CHUNK_HEADER_SIZE];
-        BitConverter.TryWriteBytes(header.AsSpan(0), compLengthWithFlag);
-        BitConverter.TryWriteBytes(header.AsSpan(4), (uint)decompLength);
-        _container.WriteToFile(_fileEntry, header);
-        _container.WriteToFile(_fileEntry, compressed);
+        _data.Write(BitConverter.GetBytes(compLengthWithFlag));
+        _data.Write(BitConverter.GetBytes((uint)uncompressedData.Length));
+        _data.Write(compressed);
 
-        // Update offset and timestamp tables
-        int offset = (sectorNumber << 8) | sectorsNeeded;
-        _offsets[x + z * 32] = offset;
-        _timestamps[x + z * 32] = (int)(DateTimeOffset.UtcNow.ToUnixTimeSeconds());
+        // Pad to sector boundary
+        int written = CHUNK_HEADER_SIZE + compressed.Length;
+        int padding = (sectorsNeeded * SECTOR_BYTES) - written;
+        if (padding > 0)
+            _data.Write(new byte[padding]);
 
-        // Write offset entry back to sector 0
-        _container.SeekFile(_fileEntry, (uint)((x + z * 32) * 4));
-        _container.WriteToFile(_fileEntry, BitConverter.GetBytes(offset));
+        // Record offset and timestamp
+        _offsets[x + z * 32] = (sectorNumber << 8) | sectorsNeeded;
+        _timestamps[x + z * 32] = (int)DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+    }
 
-        // Write timestamp entry to sector 1
-        _container.SeekFile(_fileEntry, (uint)(SECTOR_BYTES + (x + z * 32) * 4));
-        _container.WriteToFile(_fileEntry, BitConverter.GetBytes(_timestamps[x + z * 32]));
+    /// <summary>
+    /// Finalises the region file and writes it into the SaveDataContainer.
+    /// Call this after all chunks have been written.
+    /// </summary>
+    public void WriteTo(SaveDataContainer container)
+    {
+        // Write offset table at sector 0
+        _data.Seek(0, SeekOrigin.Begin);
+        for (int i = 0; i < SECTOR_INTS; i++)
+            _data.Write(BitConverter.GetBytes(_offsets[i]));
+
+        // Write timestamp table at sector 1
+        _data.Seek(SECTOR_BYTES, SeekOrigin.Begin);
+        for (int i = 0; i < SECTOR_INTS; i++)
+            _data.Write(BitConverter.GetBytes(_timestamps[i]));
+
+        // Write the entire region file as one blob to the container
+        byte[] regionBytes = _data.ToArray();
+        var entry = container.CreateFile(_filename);
+        container.WriteToFile(entry, regionBytes);
     }
 }
