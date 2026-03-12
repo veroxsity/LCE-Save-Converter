@@ -1,2 +1,4 @@
-Minecraft-LegacyConsoleEdition/
-CONVERTER_DOCS.md
+bin/
+obj/
+.vs/
+*.user
