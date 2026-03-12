@@ -729,6 +729,66 @@ public static class ChunkConverter
 
         switch (name)
         {
+            case "deepslate":
+            case "polished_deepslate":
+            case "tuff":
+            case "calcite":
+            case "dripstone_block":
+                block = new LegacyBlockState(1, 0);   // Stone
+                return true;
+            case "cobbled_deepslate":
+                block = new LegacyBlockState(4, 0);   // Cobblestone
+                return true;
+            case "deepslate_bricks":
+            case "deepslate_tiles":
+                block = new LegacyBlockState(98, 0);  // Stone Bricks
+                return true;
+            case "cracked_deepslate_bricks":
+            case "cracked_deepslate_tiles":
+                block = new LegacyBlockState(98, 2);  // Cracked Stone Bricks
+                return true;
+            case "chiseled_deepslate":
+                block = new LegacyBlockState(98, 3);  // Chiseled Stone Bricks
+                return true;
+            case "deepslate_coal_ore":
+                block = new LegacyBlockState(16, 0);  // Coal Ore
+                return true;
+            case "deepslate_iron_ore":
+                block = new LegacyBlockState(15, 0);  // Iron Ore
+                return true;
+            case "deepslate_copper_ore":
+                block = new LegacyBlockState(15, 0);  // Closest legacy ore: Iron Ore
+                return true;
+            case "deepslate_gold_ore":
+                block = new LegacyBlockState(14, 0);  // Gold Ore
+                return true;
+            case "deepslate_redstone_ore":
+                block = new LegacyBlockState(73, 0);  // Redstone Ore
+                return true;
+            case "deepslate_lapis_ore":
+                block = new LegacyBlockState(21, 0);  // Lapis Ore
+                return true;
+            case "deepslate_diamond_ore":
+                block = new LegacyBlockState(56, 0);  // Diamond Ore
+                return true;
+            case "deepslate_emerald_ore":
+                block = new LegacyBlockState(129, 0); // Emerald Ore
+                return true;
+            case "deepslate_tile_stairs":
+            case "deepslate_brick_stairs":
+            case "cobbled_deepslate_stairs":
+                block = new LegacyBlockState(67, 0);  // Cobblestone Stairs
+                return true;
+            case "deepslate_tile_slab":
+            case "deepslate_brick_slab":
+            case "cobbled_deepslate_slab":
+                block = new LegacyBlockState(44, 3);  // Cobblestone Slab
+                return true;
+            case "deepslate_tile_wall":
+            case "deepslate_brick_wall":
+            case "cobbled_deepslate_wall":
+                block = new LegacyBlockState(139, 0); // Cobblestone Wall
+                return true;
             case "grass_block":
                 block = new LegacyBlockState(2, 0);
                 return true;
