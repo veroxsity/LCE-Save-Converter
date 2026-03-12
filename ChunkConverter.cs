@@ -226,13 +226,31 @@ public static class ChunkConverter
 
     private static byte[] GetByteArrayOrDefault(NbtCompound tag, string name, int defaultSize)
     {
-        var arr = tag.Get<NbtByteArray>(name);
-        if (arr != null && arr.Value.Length >= defaultSize)
-            return arr.Value[..defaultSize]; // Trim if longer (e.g. Java 1.8+ heightmap is int[])
-        
-        byte[] result = new byte[defaultSize];
-        if (arr != null)
-            Buffer.BlockCopy(arr.Value, 0, result, 0, Math.Min(arr.Value.Length, defaultSize));
-        return result;
+        if (!tag.Contains(name))
+            return new byte[defaultSize];
+
+        var nbtTag = tag[name]!;
+
+        // Standard byte array
+        if (nbtTag is NbtByteArray byteArr)
+        {
+            if (byteArr.Value.Length >= defaultSize)
+                return byteArr.Value[..defaultSize];
+            byte[] padded = new byte[defaultSize];
+            Buffer.BlockCopy(byteArr.Value, 0, padded, 0, byteArr.Value.Length);
+            return padded;
+        }
+
+        // Java 1.8+ stores HeightMap as IntArray — convert to byte array (clamp to 0-255)
+        if (nbtTag is NbtIntArray intArr)
+        {
+            byte[] result = new byte[defaultSize];
+            int len = Math.Min(intArr.Value.Length, defaultSize);
+            for (int i = 0; i < len; i++)
+                result[i] = (byte)Math.Clamp(intArr.Value[i], 0, 255);
+            return result;
+        }
+
+        return new byte[defaultSize];
     }
 }
