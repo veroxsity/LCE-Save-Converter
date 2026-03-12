@@ -313,6 +313,7 @@ class Program
                 try
                 {
                     lceChunkData = ChunkConverter.ConvertChunk(chunkNbt, lcx, lcz);
+                    lceChunkData = NormalizeChunkCoordinates(lceChunkData, lcx, lcz);
                     if (lceChunkData.Length == 0) continue;
                 }
                 catch (Exception ex)
@@ -354,6 +355,30 @@ class Program
             region.WriteTo(container);
 
         return converted;
+    }
+
+    private static byte[] NormalizeChunkCoordinates(byte[] chunkData, int expectedX, int expectedZ)
+    {
+        using var ms = new MemoryStream(chunkData);
+        var file = new NbtFile();
+        file.LoadFromStream(ms, NbtCompression.None);
+
+        var level = file.RootTag.Get<NbtCompound>("Level");
+        if (level == null)
+            return chunkData;
+
+        var xPos = level.Get<NbtInt>("xPos");
+        var zPos = level.Get<NbtInt>("zPos");
+
+        if (xPos != null) xPos.Value = expectedX;
+        else level.Add(new NbtInt("xPos", expectedX));
+
+        if (zPos != null) zPos.Value = expectedZ;
+        else level.Add(new NbtInt("zPos", expectedZ));
+
+        using var outMs = new MemoryStream();
+        file.SaveToStream(outMs, NbtCompression.None);
+        return outMs.ToArray();
     }
 
     static void InspectSaveFile(string path)
