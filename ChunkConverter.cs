@@ -675,6 +675,54 @@ public static class ChunkConverter
             return true;
         }
 
+        // Dispenser and dropper: facing uses Facing constants (down=0..east=5), bit 3 = triggered.
+        if (name == "dispenser" || name == "dropper")
+        {
+            byte id = name == "dropper" ? (byte)158 : (byte)23;
+            byte data = MapFacingData(GetProperty(properties, "facing"));
+            if (GetBoolProperty(properties, "triggered")) data |= 8;
+            block = new LegacyBlockState(id, data);
+            return true;
+        }
+
+        // Piston and sticky piston: facing uses Facing constants, bit 3 = extended.
+        if (name == "piston" || name == "sticky_piston")
+        {
+            byte id = name == "sticky_piston" ? (byte)29 : (byte)33;
+            byte data = MapFacingData(GetProperty(properties, "facing"));
+            if (GetBoolProperty(properties, "extended")) data |= 8;
+            block = new LegacyBlockState(id, data);
+            return true;
+        }
+
+        // Piston head/arm (PistonExtensionTile, ID 34): facing + sticky bit.
+        if (name == "piston_head")
+        {
+            byte data = MapFacingData(GetProperty(properties, "facing"));
+            if (GetProperty(properties, "type") == "sticky") data |= 8;
+            block = new LegacyBlockState(34, data);
+            return true;
+        }
+
+        // Redstone wire: data is power level 0-15.
+        if (name == "redstone_wire")
+        {
+            byte data = (byte)Math.Clamp(GetIntProperty(properties, "power", 0), 0, 15);
+            block = new LegacyBlockState(55, data);
+            return true;
+        }
+
+        // Repeater: DIRECTION_MASK=0x3 (south=0,west=1,north=2,east=3), delay in bits 2-3.
+        if (name == "repeater")
+        {
+            byte id = GetBoolProperty(properties, "powered") ? (byte)94 : (byte)93;
+            byte dir = MapRepeaterDirection(GetProperty(properties, "facing"));
+            int delay = Math.Clamp(GetIntProperty(properties, "delay", 1), 1, 4);
+            byte data = (byte)(dir | ((delay - 1) << 2));
+            block = new LegacyBlockState(id, data);
+            return true;
+        }
+
         return false;
     }
 
@@ -919,6 +967,36 @@ public static class ChunkConverter
             "west" => 2,
             "east" => 3,
             _ => 0,
+        };
+    }
+
+    private static byte MapFacingData(string facing)
+    {
+        // Facing.h constants: DOWN=0, UP=1, NORTH=2, SOUTH=3, WEST=4, EAST=5.
+        // Used by DispenserTile, DropperTile, PistonBaseTile, PistonExtensionTile.
+        return facing switch
+        {
+            "down"  => 0,
+            "up"    => 1,
+            "north" => 2,
+            "south" => 3,
+            "west"  => 4,
+            "east"  => 5,
+            _       => 3,
+        };
+    }
+
+    private static byte MapRepeaterDirection(string facing)
+    {
+        // Direction.h constants: SOUTH=0, WEST=1, NORTH=2, EAST=3.
+        // Stored in DirectionalTile::DIRECTION_MASK (bits 0-1).
+        return facing switch
+        {
+            "south" => 0,
+            "west"  => 1,
+            "north" => 2,
+            "east"  => 3,
+            _       => 0,
         };
     }
 
