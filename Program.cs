@@ -26,12 +26,13 @@ class Program
 
         if (args.Length < 1)
         {
-            Console.WriteLine("Usage: LceWorldConverter <java_world_path> [output_dir] [--large-world]");
+            Console.WriteLine("Usage: LceWorldConverter <java_world_path> [output_dir] [--large-world] [--all-dimensions]");
             Console.WriteLine();
             Console.WriteLine("  java_world_path  Path to Java Edition world folder (containing level.dat)");
             Console.WriteLine("  output_dir       Optional: directory to write saveData.ms into.");
             Console.WriteLine("                   Defaults to a folder named after the world in the current directory.");
             Console.WriteLine("  --large-world    Use 320-chunk (5120 block) world size instead of 54-chunk (864 block)");
+            Console.WriteLine("  --all-dimensions Convert Nether and End in addition to Overworld (experimental)");
             return;
         }
 
@@ -41,6 +42,7 @@ class Program
         // If next arg is provided and isn't a flag, treat it as the output directory
         string? outputDirArg = args.Length > 1 && !args[1].StartsWith("--") ? args[1] : null;
         bool largeWorld = args.Contains("--large-world");
+        bool convertAllDimensions = args.Contains("--all-dimensions");
 
         string worldName = Path.GetFileName(javaWorldPath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
         string outputDir = outputDirArg ?? Path.Combine(Directory.GetCurrentDirectory(), worldName);
@@ -114,19 +116,28 @@ class Program
             Console.WriteLine($"  {owConverted} chunks converted");
 
             // Step 6: Convert nether chunks
-            Console.WriteLine($"Converting nether ({xzSize / hellScale}x{xzSize / hellScale} chunks)...");
-            int netherOffsetChunkX = FloorDiv(spawnChunkX, 8);
-            int netherOffsetChunkZ = FloorDiv(spawnChunkZ, 8);
-            int netherConverted = ConvertDimension(reader, container, "DIM-1",
-                hellHalfSize, netherOffsetChunkX, netherOffsetChunkZ);
-            Console.WriteLine($"  {netherConverted} chunks converted");
+            int netherConverted = 0;
+            int endConverted = 0;
+            if (convertAllDimensions)
+            {
+                Console.WriteLine($"Converting nether ({xzSize / hellScale}x{xzSize / hellScale} chunks)...");
+                int netherOffsetChunkX = FloorDiv(spawnChunkX, 8);
+                int netherOffsetChunkZ = FloorDiv(spawnChunkZ, 8);
+                netherConverted = ConvertDimension(reader, container, "DIM-1",
+                    hellHalfSize, netherOffsetChunkX, netherOffsetChunkZ);
+                Console.WriteLine($"  {netherConverted} chunks converted");
 
-            // Step 7: Convert End chunks
-            Console.WriteLine($"Converting end ({endHalfSize * 2}x{endHalfSize * 2} chunks)...");
-            // End is converted around 0,0 (legacy End spawn/platform centered near origin).
-            int endConverted = ConvertDimension(reader, container, "DIM1",
-                endHalfSize, 0, 0);
-            Console.WriteLine($"  {endConverted} chunks converted");
+                // Step 7: Convert End chunks
+                Console.WriteLine($"Converting end ({endHalfSize * 2}x{endHalfSize * 2} chunks)...");
+                // End is converted around 0,0 (legacy End spawn/platform centered near origin).
+                endConverted = ConvertDimension(reader, container, "DIM1",
+                    endHalfSize, 0, 0);
+                Console.WriteLine($"  {endConverted} chunks converted");
+            }
+            else
+            {
+                Console.WriteLine("Skipping nether/end conversion (use --all-dimensions to enable).");
+            }
 
             // Step 8: Write LCE level.dat (after region files, matching real save order)
             Console.Write("Converting level.dat... ");
