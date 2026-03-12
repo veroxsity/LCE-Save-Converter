@@ -142,20 +142,46 @@ public static class ChunkConverter
         var sections = level.Get<NbtList>("Sections") ?? level.Get<NbtList>("sections");
         if (sections == null) return;
 
+        var decodedSections = new List<DecodedSection>();
         foreach (NbtTag sectionTag in sections)
         {
             if (sectionTag is not NbtCompound section) continue;
 
             int sectionY = section.Get<NbtByte>("Y")?.Value ?? -1;
-            if (sectionY < 0 || sectionY > 7) continue; // LCE chunk height is 128
-
             if (!TryDecodeSectionBlocks(section, out byte[] sBlocks, out byte[] sData))
                 continue;
 
             byte[]? sSky = section.Get<NbtByteArray>("SkyLight")?.Value ?? section.Get<NbtByteArray>("sky_light")?.Value;
             byte[]? sBlock = section.Get<NbtByteArray>("BlockLight")?.Value ?? section.Get<NbtByteArray>("block_light")?.Value;
 
-            int baseY = sectionY * 16;
+            decodedSections.Add(new DecodedSection
+            {
+                SectionY = sectionY,
+                Blocks = sBlocks,
+                Data = sData,
+                SkyLight = sSky,
+                BlockLight = sBlock,
+                NonAirCount = CountNonAir(sBlocks)
+            });
+        }
+
+        if (decodedSections.Count == 0) return;
+
+        // Choose the densest section as anchor and map it near y=64 (section 4).
+        // This keeps high modern builds from being entirely clipped above LCE's 0..127 range.
+        int anchorSectionY = decodedSections
+            .OrderByDescending(s => s.NonAirCount)
+            .ThenBy(s => Math.Abs(s.SectionY - 4))
+            .First()
+            .SectionY;
+        int sectionShift = anchorSectionY - 4;
+
+        foreach (var section in decodedSections)
+        {
+            int remappedSectionY = section.SectionY - sectionShift;
+            if (remappedSectionY < 0 || remappedSectionY > 7) continue;
+
+            int baseY = remappedSectionY * 16;
 
             // Anvil section order: x + z*16 + y*256. Old chunk order: (x*16 + z)*128 + y.
             for (int i = 0; i < 4096; i++)
@@ -166,13 +192,31 @@ public static class ChunkConverter
                 int globalY = baseY + y;
                 int flatIndex = ((x * 16) + z) * 128 + globalY;
 
-                blocks[flatIndex] = sBlocks[i];
+                blocks[flatIndex] = section.Blocks[i];
 
-                if (sData != null) SetNibble(data, flatIndex, GetNibble(sData, i));
-                if (sSky != null) SetNibble(skyLight, flatIndex, GetNibble(sSky, i));
-                if (sBlock != null) SetNibble(blockLight, flatIndex, GetNibble(sBlock, i));
+                if (section.Data != null) SetNibble(data, flatIndex, GetNibble(section.Data, i));
+                if (section.SkyLight != null) SetNibble(skyLight, flatIndex, GetNibble(section.SkyLight, i));
+                if (section.BlockLight != null) SetNibble(blockLight, flatIndex, GetNibble(section.BlockLight, i));
             }
         }
+    }
+
+    private sealed class DecodedSection
+    {
+        public int SectionY { get; init; }
+        public byte[] Blocks { get; init; } = Array.Empty<byte>();
+        public byte[] Data { get; init; } = Array.Empty<byte>();
+        public byte[]? SkyLight { get; init; }
+        public byte[]? BlockLight { get; init; }
+        public int NonAirCount { get; init; }
+    }
+
+    private static int CountNonAir(byte[] blocks)
+    {
+        int count = 0;
+        for (int i = 0; i < blocks.Length; i++)
+            if (blocks[i] != 0) count++;
+        return count;
     }
 
     private static bool TryDecodeSectionBlocks(NbtCompound section, out byte[] blocks, out byte[] data)
