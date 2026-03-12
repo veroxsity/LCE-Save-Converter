@@ -100,7 +100,7 @@ class Program
             // DIM-1 (nether) first, then DIM1 (end), then overworld
             // From McRegionChunkStorage.cpp and real save analysis
             string[] defaultRegionOrder = {
-                "DIM-1r.-1.-1.mcr", "DIM-1r.0.-1.mcr", "DIM-1r.0.0.mcr", "DIM-1r.-1.0.mcr",
+                "DIM-1/r.-1.-1.mcr", "DIM-1/r.0.-1.mcr", "DIM-1/r.0.0.mcr", "DIM-1/r.-1.0.mcr",
                 "DIM1/r.-1.-1.mcr", "DIM1/r.0.-1.mcr", "DIM1/r.0.0.mcr", "DIM1/r.-1.0.mcr",
                 "r.-1.-1.mcr", "r.0.-1.mcr", "r.0.0.mcr", "r.-1.0.mcr"
             };
@@ -263,10 +263,10 @@ class Program
             regionLookup[(rx, rz)] = path;
 
         // LCE region file prefix inside saveData.ms
-        // From real save analysis: Nether = "DIM-1" (no slash), End = "DIM1/" (with slash)
+        // From save naming: Nether = "DIM-1/", End = "DIM1/".
         string lcePrefix;
         if (dimensionPrefix == "DIM-1")
-            lcePrefix = "DIM-1";      // Nether: DIM-1r.X.Z.mcr
+            lcePrefix = "DIM-1/";     // Nether: DIM-1/r.X.Z.mcr
         else if (dimensionPrefix == "DIM1")
             lcePrefix = "DIM1/";      // End: DIM1/r.X.Z.mcr
         else
