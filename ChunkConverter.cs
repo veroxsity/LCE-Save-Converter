@@ -723,6 +723,102 @@ public static class ChunkConverter
             return true;
         }
 
+        // Comparator: direction + subtract mode, lit state determines ID (149=off, 150=on).
+        if (name == "comparator")
+        {
+            byte id = GetBoolProperty(properties, "powered") ? (byte)150 : (byte)149;
+            byte dir = MapRepeaterDirection(GetProperty(properties, "facing"));
+            byte data = (byte)(dir | (GetProperty(properties, "mode") == "subtract" ? 4 : 0));
+            block = new LegacyBlockState(id, data);
+            return true;
+        }
+
+        // Wall torch: facing maps to TorchTile face data (east=1, west=2, south=3, north=4).
+        if (name == "wall_torch")
+        {
+            byte data = MapWallTorchFacing(GetProperty(properties, "facing"));
+            block = new LegacyBlockState(50, data);
+            return true;
+        }
+
+        // Redstone wall torch: same facing data, unlit=75 / lit=76.
+        if (name == "redstone_wall_torch")
+        {
+            byte id = GetBoolProperty(properties, "lit") ? (byte)76 : (byte)75;
+            byte data = MapWallTorchFacing(GetProperty(properties, "facing"));
+            block = new LegacyBlockState(id, data);
+            return true;
+        }
+
+        // Nether wart: age 0-3 in data.
+        if (name == "nether_wart")
+        {
+            byte data = (byte)Math.Clamp(GetIntProperty(properties, "age", 0), 0, 3);
+            block = new LegacyBlockState(115, data);
+            return true;
+        }
+
+        // Wheat: age 0-7 in data.
+        if (name == "wheat")
+        {
+            byte data = (byte)Math.Clamp(GetIntProperty(properties, "age", 0), 0, 7);
+            block = new LegacyBlockState(59, data);
+            return true;
+        }
+
+        // Pumpkin stem / attached pumpkin stem (ID 104): age 0-7, attached = 7.
+        if (name == "pumpkin_stem" || name == "attached_pumpkin_stem")
+        {
+            byte data = name == "attached_pumpkin_stem"
+                ? (byte)7
+                : (byte)Math.Clamp(GetIntProperty(properties, "age", 0), 0, 7);
+            block = new LegacyBlockState(104, data);
+            return true;
+        }
+
+        // Melon stem / attached melon stem (ID 105): age 0-7, attached = 7.
+        if (name == "melon_stem" || name == "attached_melon_stem")
+        {
+            byte data = name == "attached_melon_stem"
+                ? (byte)7
+                : (byte)Math.Clamp(GetIntProperty(properties, "age", 0), 0, 7);
+            block = new LegacyBlockState(105, data);
+            return true;
+        }
+
+        // Cocoa (ID 127): age 0-2 in bits 2-3, Direction enum in bits 0-1.
+        if (name == "cocoa")
+        {
+            byte age = (byte)Math.Clamp(GetIntProperty(properties, "age", 0), 0, 2);
+            byte dir = MapRepeaterDirection(GetProperty(properties, "facing"));
+            block = new LegacyBlockState(127, (byte)((age << 2) | dir));
+            return true;
+        }
+
+        // Hay block (ID 170): axis → RotatedPillarTile data (Y=0, X=4, Z=8).
+        if (name == "hay_block")
+        {
+            byte data = GetProperty(properties, "axis") switch { "x" => 4, "z" => 8, _ => 0 };
+            block = new LegacyBlockState(170, data);
+            return true;
+        }
+
+        // Quartz pillar (ID 155): axis → QuartzBlockTile data (Y=2, X=3, Z=4).
+        if (name == "quartz_pillar")
+        {
+            byte data = GetProperty(properties, "axis") switch { "x" => 3, "z" => 4, _ => 2 };
+            block = new LegacyBlockState(155, data);
+            return true;
+        }
+
+        // Nether portal (ID 90): axis → data (x=1, z=2).
+        if (name == "nether_portal")
+        {
+            byte data = GetProperty(properties, "axis") == "z" ? (byte)2 : (byte)1;
+            block = new LegacyBlockState(90, data);
+            return true;
+        }
+
         return false;
     }
 
@@ -760,6 +856,15 @@ public static class ChunkConverter
 
             byte data = (byte)(slabVariant | (isTop ? 8 : 0));
             block = new LegacyBlockState(44, data); // stone slab family
+            return true;
+        }
+
+        // Catch-all: any unrecognised slab → stone slab family.
+        if (name.EndsWith("_slab", StringComparison.Ordinal))
+        {
+            block = isDouble
+                ? new LegacyBlockState(43, 0)
+                : new LegacyBlockState(44, (byte)(isTop ? 8 : 0));
             return true;
         }
 
@@ -865,6 +970,25 @@ public static class ChunkConverter
             case "quartz_stairs":
             case "purpur_stairs":
                 id = 156;
+                return true;
+            case "crimson_stairs":
+            case "warped_stairs":
+                id = 114; // nether brick stairs — closest nether material
+                return true;
+            case "blackstone_stairs":
+            case "stone_stairs":
+            case "mossy_cobblestone_stairs":
+            case "cobbled_deepslate_stairs":
+                id = 67; // cobblestone stairs
+                return true;
+            case "dark_prismarine_stairs":
+            case "prismarine_stairs":
+            case "prismarine_brick_stairs":
+            case "polished_blackstone_brick_stairs":
+            case "mossy_stone_brick_stairs":
+            case "deepslate_brick_stairs":
+            case "deepslate_tile_stairs":
+                id = 109; // stone brick stairs
                 return true;
             default:
                 return false;
@@ -1000,6 +1124,19 @@ public static class ChunkConverter
         };
     }
 
+    private static byte MapWallTorchFacing(string facing)
+    {
+        // TorchTile face data: east=1, west=2, south=3, north=4 (data 5 = ceiling).
+        return facing switch
+        {
+            "east"  => 1,
+            "west"  => 2,
+            "south" => 3,
+            "north" => 4,
+            _       => 1,
+        };
+    }
+
     private static bool TryMapColoredBlock(string name, NbtCompound? properties, out LegacyBlockState block)
     {
         block = default;
@@ -1097,7 +1234,7 @@ public static class ChunkConverter
     private static readonly string[] ColorNames =
     {
         "white", "orange", "magenta", "light_blue", "yellow", "lime", "pink", "gray",
-        "silver", "cyan", "purple", "blue", "brown", "green", "red", "black"
+        "silver", "light_gray", "cyan", "purple", "blue", "brown", "green", "red", "black"
     };
 
     private static bool TryMapWoodBlock(string name, NbtCompound? properties, out LegacyBlockState block)
@@ -2121,6 +2258,136 @@ public static class ChunkConverter
         ["log2"] = new LegacyBlockState(162, 0),
         ["acacia_stairs"] = new LegacyBlockState(163, 0),
         ["dark_oak_stairs"] = new LegacyBlockState(164, 0),
+
+        // Java 1.7 / vanilla blocks missing direct entries
+        ["fern"] = new LegacyBlockState(31, 2),           // Tall Grass ID 31, data 2 = fern
+        ["sugar_cane"] = new LegacyBlockState(83, 0),
+        ["pumpkin"] = new LegacyBlockState(86, 0),
+        ["carved_pumpkin"] = new LegacyBlockState(86, 0),
+        ["nether_quartz_ore"] = new LegacyBlockState(153, 0),
+        ["dragon_egg"] = new LegacyBlockState(122, 0),
+        ["spawner"] = new LegacyBlockState(52, 0),
+        ["tripwire"] = new LegacyBlockState(132, 0),
+        ["sponge"] = new LegacyBlockState(19, 0),
+        ["wet_sponge"] = new LegacyBlockState(19, 0),
+        ["cauldron"] = new LegacyBlockState(118, 0),
+        ["water_cauldron"] = new LegacyBlockState(118, 3), // full cauldron
+        ["coal_block"] = new LegacyBlockState(173, 0),
+        ["mushroom_stem"] = new LegacyBlockState(99, 10),  // brown mushroom block, data 10 = stem
+
+        // Stone/cobblestone variants (map to nearest equivalent)
+        ["smooth_stone"] = new LegacyBlockState(1, 0),
+        ["infested_stone"] = new LegacyBlockState(1, 0),
+        ["infested_stone_bricks"] = new LegacyBlockState(98, 0),
+        ["infested_deepslate"] = new LegacyBlockState(1, 0),
+        ["polished_blackstone_bricks"] = new LegacyBlockState(98, 0),
+        ["cracked_polished_blackstone_bricks"] = new LegacyBlockState(98, 2), // cracked stone bricks
+        ["blackstone"] = new LegacyBlockState(4, 0),       // cobblestone
+        ["quartz_bricks"] = new LegacyBlockState(155, 0),
+        ["chiseled_quartz_block"] = new LegacyBlockState(155, 1), // chiseled quartz
+        ["chiseled_nether_bricks"] = new LegacyBlockState(112, 0),
+        ["smooth_basalt"] = new LegacyBlockState(1, 0),
+        ["pointed_dripstone"] = new LegacyBlockState(1, 0),
+        ["lodestone"] = new LegacyBlockState(1, 0),
+        ["structure_block"] = new LegacyBlockState(1, 0),
+        ["stonecutter"] = new LegacyBlockState(4, 0),
+        ["rooted_dirt"] = new LegacyBlockState(3, 0),
+        ["dirt_path"] = new LegacyBlockState(2, 0),
+        ["moss_block"] = new LegacyBlockState(48, 0),      // mossy cobblestone
+        ["moss_carpet"] = new LegacyBlockState(2, 0),
+
+        // Wood/plant variants
+        ["dried_kelp_block"] = new LegacyBlockState(170, 0), // hay bale
+        ["crimson_stem"] = new LegacyBlockState(17, 0),
+        ["warped_stem"] = new LegacyBlockState(17, 0),
+        ["stripped_crimson_stem"] = new LegacyBlockState(17, 0),
+        ["stripped_warped_stem"] = new LegacyBlockState(17, 0),
+        ["azalea"] = new LegacyBlockState(18, 0),          // leaves
+        ["flowering_azalea"] = new LegacyBlockState(18, 0),
+        ["big_dripleaf"] = new LegacyBlockState(111, 0),   // lily pad
+        ["big_dripleaf_stem"] = new LegacyBlockState(17, 0),
+        ["small_dripleaf"] = new LegacyBlockState(0, 0),   // no good equivalent
+        ["hanging_roots"] = new LegacyBlockState(0, 0),
+        ["spore_blossom"] = new LegacyBlockState(38, 0),
+        ["twisting_vines"] = new LegacyBlockState(106, 0),
+        ["twisting_vines_plant"] = new LegacyBlockState(106, 0),
+        ["cave_vines"] = new LegacyBlockState(0, 0),
+        ["cave_vines_plant"] = new LegacyBlockState(0, 0),
+        ["glow_lichen"] = new LegacyBlockState(0, 0),
+
+        // Flowers (all map to poppy/rose ID 38)
+        ["cornflower"] = new LegacyBlockState(38, 0),
+        ["lily_of_the_valley"] = new LegacyBlockState(38, 0),
+        ["oxeye_daisy"] = new LegacyBlockState(38, 0),
+        ["pink_tulip"] = new LegacyBlockState(38, 0),
+
+        // Corals (map to poppy as nearest colourful plant)
+        ["brain_coral"] = new LegacyBlockState(38, 0),
+        ["bubble_coral"] = new LegacyBlockState(38, 0),
+        ["fire_coral"] = new LegacyBlockState(38, 0),
+        ["horn_coral"] = new LegacyBlockState(38, 0),
+        ["tube_coral"] = new LegacyBlockState(38, 0),
+        ["horn_coral_fan"] = new LegacyBlockState(38, 0),
+        ["tube_coral_fan"] = new LegacyBlockState(38, 0),
+
+        // Functional/utility blocks
+        ["smoker"] = new LegacyBlockState(61, 0),          // furnace
+        ["grindstone"] = new LegacyBlockState(145, 0),     // anvil
+        ["bell"] = new LegacyBlockState(145, 0),           // anvil
+        ["loom"] = new LegacyBlockState(58, 0),            // crafting table
+        ["smithing_table"] = new LegacyBlockState(58, 0),
+        ["target"] = new LegacyBlockState(70, 0),          // stone pressure plate
+        ["chain"] = new LegacyBlockState(101, 0),          // iron bars
+        ["lightning_rod"] = new LegacyBlockState(101, 0),
+        ["lantern"] = new LegacyBlockState(50, 0),         // torch
+        ["shroomlight"] = new LegacyBlockState(89, 0),     // glowstone
+        ["soul_campfire"] = new LegacyBlockState(51, 0),   // fire
+        ["bee_nest"] = new LegacyBlockState(54, 0),        // chest
+
+        // Skull/head variants
+        ["wither_skeleton_skull"] = new LegacyBlockState(144, 0),
+        ["dragon_wall_head"] = new LegacyBlockState(144, 0),
+
+        // Nether variants
+        ["nether_portal"] = new LegacyBlockState(90, 0),
+
+        // Candles (all map to torch)
+        ["white_candle"] = new LegacyBlockState(50, 0),
+        ["orange_candle"] = new LegacyBlockState(50, 0),
+        ["gray_candle"] = new LegacyBlockState(50, 0),
+        ["cyan_candle"] = new LegacyBlockState(50, 0),
+        ["lime_candle"] = new LegacyBlockState(50, 0),
+
+        // Potted plants (all map to flower pot)
+        ["potted_blue_orchid"] = new LegacyBlockState(140, 0),
+        ["potted_brown_mushroom"] = new LegacyBlockState(140, 0),
+        ["potted_cactus"] = new LegacyBlockState(140, 0),
+        ["potted_dandelion"] = new LegacyBlockState(140, 0),
+        ["potted_oxeye_daisy"] = new LegacyBlockState(140, 0),
+        ["potted_poppy"] = new LegacyBlockState(140, 0),
+        ["potted_red_mushroom"] = new LegacyBlockState(140, 0),
+
+        // Snow/ice
+        ["powder_snow"] = new LegacyBlockState(80, 0),     // snow block
+
+        // Ore/metal variants
+        ["copper_ore"] = new LegacyBlockState(15, 0),      // iron ore (closest metal)
+        ["oxidized_copper"] = new LegacyBlockState(15, 0),
+        ["weathered_copper"] = new LegacyBlockState(15, 0),
+        ["raw_copper_block"] = new LegacyBlockState(42, 0),
+        ["raw_iron_block"] = new LegacyBlockState(42, 0),
+
+        // Amethyst / deepslate decorative
+        ["small_amethyst_bud"] = new LegacyBlockState(20, 0), // glass
+        ["medium_amethyst_bud"] = new LegacyBlockState(20, 0),
+        ["large_amethyst_bud"] = new LegacyBlockState(20, 0),
+
+        // Misc
+        ["slime_block"] = new LegacyBlockState(0, 0),
+        ["light"] = new LegacyBlockState(0, 0),
+        ["scaffolding"] = new LegacyBlockState(0, 0),
+        ["powder_snow_cauldron"] = new LegacyBlockState(118, 0),
+        ["lava_cauldron"] = new LegacyBlockState(118, 0),
     };
 
     private static readonly Dictionary<byte, byte> BlockRemapTable = new()
