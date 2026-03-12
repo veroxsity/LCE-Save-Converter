@@ -399,6 +399,9 @@ public static class ChunkConverter
 
         NbtCompound? properties = paletteEntry.Get<NbtCompound>("Properties");
 
+        if (TryMapFluidBlock(name, properties, out var fluid))
+            return fluid;
+
         if (TryMapDirectionalBlock(name, properties, out var directional))
             return directional;
 
@@ -418,6 +421,31 @@ public static class ChunkConverter
             return variant;
 
         return new LegacyBlockState(0, 0);
+    }
+
+    private static bool TryMapFluidBlock(string name, NbtCompound? properties, out LegacyBlockState block)
+    {
+        block = default;
+
+        if (name != "water" && name != "lava")
+            return false;
+
+        int level = GetIntProperty(properties, "level", 0);
+        level = Math.Clamp(level, 0, 15);
+
+        bool isSource = level == 0;
+        byte legacyData = (byte)level;
+
+        if (name == "water")
+        {
+            // Legacy uses id 9 for still/source water and id 8 for flowing water.
+            block = new LegacyBlockState(isSource ? (byte)9 : (byte)8, legacyData);
+            return true;
+        }
+
+        // Legacy uses id 11 for still/source lava and id 10 for flowing lava.
+        block = new LegacyBlockState(isSource ? (byte)11 : (byte)10, legacyData);
+        return true;
     }
 
     private static bool TryMapDirectionalBlock(string name, NbtCompound? properties, out LegacyBlockState block)
@@ -950,6 +978,12 @@ public static class ChunkConverter
     private static bool GetBoolProperty(NbtCompound? properties, string name)
     {
         return string.Equals(GetProperty(properties, name), "true", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static int GetIntProperty(NbtCompound? properties, string name, int defaultValue)
+    {
+        string value = GetProperty(properties, name);
+        return int.TryParse(value, out int parsed) ? parsed : defaultValue;
     }
 
     private static string GetPrefixBeforeUnderscore(string value)
