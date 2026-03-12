@@ -2,3 +2,6 @@ bin/
 obj/
 .vs/
 *.user
+CONVERTER_DOCS.md
+Minecraft-LegacyConsoleEdition/
+testing/

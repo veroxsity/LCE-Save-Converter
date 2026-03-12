@@ -523,31 +523,17 @@ public static class ChunkConverter
             return true;
         }
 
-        // Sandstone-family slabs in modern versions are split into distinct names.
-        if (name is "sandstone_slab" or "smooth_sandstone_slab" or "cut_sandstone_slab")
+        if (name.EndsWith("_slab", StringComparison.Ordinal) &&
+            TryGetStoneSlabVariant(name, out byte slabVariant))
         {
             if (isDouble)
             {
-                block = new LegacyBlockState(43, 1); // double sandstone slab
+                block = new LegacyBlockState(43, slabVariant); // double stone slab family
                 return true;
             }
 
-            byte data = (byte)(1 | (isTop ? 8 : 0));
-            block = new LegacyBlockState(44, data); // sandstone slab
-            return true;
-        }
-
-        if (name is "red_sandstone_slab" or "smooth_red_sandstone_slab" or "cut_red_sandstone_slab")
-        {
-            // Closest legacy fallback: sandstone slab.
-            if (isDouble)
-            {
-                block = new LegacyBlockState(43, 1);
-                return true;
-            }
-
-            byte data = (byte)(1 | (isTop ? 8 : 0));
-            block = new LegacyBlockState(44, data);
+            byte data = (byte)(slabVariant | (isTop ? 8 : 0));
+            block = new LegacyBlockState(44, data); // stone slab family
             return true;
         }
 
@@ -565,6 +551,58 @@ public static class ChunkConverter
             "jungle_slab" => (variant = 3) == 3,
             "acacia_slab" => (variant = 4) == 4,
             "dark_oak_slab" => (variant = 5) == 5,
+            _ => false,
+        };
+    }
+
+    private static bool TryGetStoneSlabVariant(string name, out byte variant)
+    {
+        variant = 0;
+        return name switch
+        {
+            // Legacy slab variant 0: stone-like slabs.
+            "stone_slab" => true,
+            "smooth_stone_slab" => true,
+            "andesite_slab" => true,
+            "polished_andesite_slab" => true,
+            "diorite_slab" => true,
+            "polished_diorite_slab" => true,
+            "granite_slab" => true,
+            "polished_granite_slab" => true,
+
+            // Legacy slab variant 1: sandstone slabs.
+            "sandstone_slab" => (variant = 1) == 1,
+            "smooth_sandstone_slab" => (variant = 1) == 1,
+            "cut_sandstone_slab" => (variant = 1) == 1,
+            "red_sandstone_slab" => (variant = 1) == 1,
+            "smooth_red_sandstone_slab" => (variant = 1) == 1,
+            "cut_red_sandstone_slab" => (variant = 1) == 1,
+
+            // Legacy slab variant 3: cobblestone-like slabs.
+            "cobblestone_slab" => (variant = 3) == 3,
+            "mossy_cobblestone_slab" => (variant = 3) == 3,
+            "cobbled_deepslate_slab" => (variant = 3) == 3,
+            "deepslate_brick_slab" => (variant = 3) == 3,
+            "deepslate_tile_slab" => (variant = 3) == 3,
+
+            // Legacy slab variant 4: brick slabs.
+            "brick_slab" => (variant = 4) == 4,
+
+            // Legacy slab variant 5: stone brick slabs.
+            "stone_brick_slab" => (variant = 5) == 5,
+            "mossy_stone_brick_slab" => (variant = 5) == 5,
+
+            // Legacy slab variant 6: nether brick slabs.
+            "nether_brick_slab" => (variant = 6) == 6,
+            "red_nether_brick_slab" => (variant = 6) == 6,
+
+            // Legacy slab variant 7: quartz-like fallback slabs.
+            "quartz_slab" => (variant = 7) == 7,
+            "smooth_quartz_slab" => (variant = 7) == 7,
+            "purpur_slab" => (variant = 7) == 7,
+            "prismarine_slab" => (variant = 7) == 7,
+            "prismarine_brick_slab" => (variant = 7) == 7,
+            "dark_prismarine_slab" => (variant = 7) == 7,
             _ => false,
         };
     }
@@ -826,6 +864,13 @@ public static class ChunkConverter
     private static bool TryMapVariantBlock(string name, NbtCompound? properties, out LegacyBlockState block)
     {
         block = default;
+
+        if (name == "redstone_lamp")
+        {
+            bool isLit = GetBoolProperty(properties, "lit");
+            block = new LegacyBlockState(isLit ? (byte)124 : (byte)123, 0);
+            return true;
+        }
 
         switch (name)
         {
