@@ -399,6 +399,9 @@ public static class ChunkConverter
 
         NbtCompound? properties = paletteEntry.Get<NbtCompound>("Properties");
 
+        if (TryMapDirectionalBlock(name, properties, out var directional))
+            return directional;
+
         if (ModernDirectMap.TryGetValue(name, out var direct))
             return direct;
 
@@ -412,6 +415,131 @@ public static class ChunkConverter
             return variant;
 
         return new LegacyBlockState(0, 0);
+    }
+
+    private static bool TryMapDirectionalBlock(string name, NbtCompound? properties, out LegacyBlockState block)
+    {
+        block = default;
+
+        // Doors require upper/lower metadata to behave correctly.
+        if (name.EndsWith("_door", StringComparison.Ordinal) || name == "iron_door")
+        {
+            byte id = name == "iron_door" ? (byte)71 : (byte)64;
+            string half = GetProperty(properties, "half");
+            bool isUpper = half == "upper";
+
+            if (isUpper)
+            {
+                // Upper half: bit 3 set, bit 0 stores hinge side, bit 1 may store powered.
+                byte data = 8;
+                if (GetProperty(properties, "hinge") == "right") data |= 1;
+                if (GetBoolProperty(properties, "powered")) data |= 2;
+                block = new LegacyBlockState(id, data);
+                return true;
+            }
+
+            byte lower = MapDoorFacing(GetProperty(properties, "facing"));
+            if (GetBoolProperty(properties, "open")) lower |= 4;
+            block = new LegacyBlockState(id, lower);
+            return true;
+        }
+
+        // Preserve stairs direction and upside-down flag.
+        if (TryGetStairsId(name, out byte stairsId))
+        {
+            byte data = MapStairsFacing(GetProperty(properties, "facing"));
+            if (GetProperty(properties, "half") == "top") data |= 4;
+            block = new LegacyBlockState(stairsId, data);
+            return true;
+        }
+
+        // Trapdoors need face/open/top bits.
+        if (name.EndsWith("trapdoor", StringComparison.Ordinal))
+        {
+            byte data = MapTrapdoorFacing(GetProperty(properties, "facing"));
+            if (GetBoolProperty(properties, "open")) data |= 4;
+            if (GetProperty(properties, "half") == "top") data |= 8;
+            block = new LegacyBlockState(96, data);
+            return true;
+        }
+
+        return false;
+    }
+
+    private static bool TryGetStairsId(string name, out byte id)
+    {
+        id = 0;
+        switch (name)
+        {
+            case "oak_stairs":
+            case "spruce_stairs":
+            case "birch_stairs":
+            case "jungle_stairs":
+            case "acacia_stairs":
+            case "dark_oak_stairs":
+                id = 53;
+                return true;
+            case "cobblestone_stairs":
+                id = 67;
+                return true;
+            case "brick_stairs":
+                id = 108;
+                return true;
+            case "stone_brick_stairs":
+                id = 109;
+                return true;
+            case "nether_brick_stairs":
+                id = 114;
+                return true;
+            case "sandstone_stairs":
+            case "red_sandstone_stairs":
+                id = 128;
+                return true;
+            case "quartz_stairs":
+            case "purpur_stairs":
+                id = 156;
+                return true;
+            default:
+                return false;
+        }
+    }
+
+    private static byte MapStairsFacing(string facing)
+    {
+        return facing switch
+        {
+            "east" => 0,  // StairTile::DIR_EAST
+            "west" => 1,  // StairTile::DIR_WEST
+            "south" => 2, // StairTile::DIR_SOUTH
+            "north" => 3, // StairTile::DIR_NORTH
+            _ => 0,
+        };
+    }
+
+    private static byte MapDoorFacing(string facing)
+    {
+        // Legacy lower-door direction bits.
+        return facing switch
+        {
+            "east" => 0,
+            "south" => 1,
+            "west" => 2,
+            "north" => 3,
+            _ => 0,
+        };
+    }
+
+    private static byte MapTrapdoorFacing(string facing)
+    {
+        // TrapDoorTile::getPlacedOnFaceDataValue mapping.
+        return facing switch
+        {
+            "north" => 0,
+            "south" => 1,
+            "west" => 2,
+            "east" => 3,
+            _ => 0,
+        };
     }
 
     private static bool TryMapColoredBlock(string name, NbtCompound? properties, out LegacyBlockState block)
@@ -691,6 +819,11 @@ public static class ChunkConverter
     private static string GetProperty(NbtCompound? properties, string name)
     {
         return properties?.Get<NbtString>(name)?.Value ?? string.Empty;
+    }
+
+    private static bool GetBoolProperty(NbtCompound? properties, string name)
+    {
+        return string.Equals(GetProperty(properties, name), "true", StringComparison.OrdinalIgnoreCase);
     }
 
     private static string GetPrefixBeforeUnderscore(string value)
