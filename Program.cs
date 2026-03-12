@@ -4,10 +4,19 @@ namespace LceWorldConverter;
 
 class Program
 {
+    // Use pre-v8 save format so chunk payloads are loaded via NBT path, which is the most stable conversion target.
+    private const short OutputSaveVersion = 7;
+
     static void Main(string[] args)
     {
         if (args.Length > 0 && args[0] == "--inspect")
         {
+            if (args.Length < 2)
+            {
+                Console.WriteLine("Usage: LceWorldConverter --inspect <saveData.ms_path>");
+                return;
+            }
+
             InspectSaveFile(args[1]);
             return;
         }
@@ -73,7 +82,7 @@ class Program
             Console.WriteLine();
 
             // Step 3: Create output container
-            var container = new SaveDataContainer();
+            var container = new SaveDataContainer(OutputSaveVersion);
 
             // Pre-create default region file entries in the order the real game expects:
             // DIM-1 (nether) first, then DIM1 (end), then overworld
@@ -94,10 +103,12 @@ class Program
 
             // Step 6: Convert nether chunks
             Console.WriteLine($"Converting nether ({xzSize / hellScale}x{xzSize / hellScale} chunks)...");
-            // Nether in Java is at 1:1 chunk coords in DIM-1/
-            // LCE nether is 1/hellScale of overworld
+            // Nether offset follows Java portal scale (overworld:block -> nether:block = 8:1).
+            // Convert spawn chunk offset to nether chunk offset using floor division for negatives.
+            int netherOffsetChunkX = FloorDiv(spawnChunkX, 8);
+            int netherOffsetChunkZ = FloorDiv(spawnChunkZ, 8);
             int netherConverted = ConvertDimension(reader, container, "DIM-1",
-                hellHalfSize, spawnChunkX / hellScale, spawnChunkZ / hellScale);
+                hellHalfSize, netherOffsetChunkX, netherOffsetChunkZ);
             Console.WriteLine($"  {netherConverted} chunks converted");
 
             // Step 7: Convert End chunks
@@ -131,6 +142,16 @@ class Program
             Console.Error.WriteLine($"\nError during conversion: {ex.Message}");
             Console.Error.WriteLine(ex.StackTrace);
         }
+    }
+
+    static int FloorDiv(int value, int divisor)
+    {
+        if (divisor <= 0) throw new ArgumentOutOfRangeException(nameof(divisor));
+        int q = value / divisor;
+        int r = value % divisor;
+        if (r != 0 && value < 0)
+            q--;
+        return q;
     }
 
     /// <summary>

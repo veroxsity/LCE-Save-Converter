@@ -23,15 +23,16 @@ public class SaveDataContainer
     public const int SAVE_FILE_HEADER_SIZE = 12;
     public const int FILE_ENTRY_SIZE = 144;
 
-    // Save version 9 = SAVE_FILE_VERSION_CHUNK_INHABITED_TIME (1.6.4 / TU19)
-    public const short SAVE_VERSION = 9;
+    private readonly short _saveVersion;
 
     private readonly List<SaveFileEntry> _entries = new();
     private byte[] _blob;
     private int _dataEnd; // points to the end of file data (start of footer)
 
-    public SaveDataContainer()
+    public SaveDataContainer(short saveVersion)
     {
+        _saveVersion = saveVersion;
+
         // Start with a reasonably sized buffer
         _blob = new byte[2 * 1024 * 1024]; // 2MB initial
         _dataEnd = SAVE_FILE_HEADER_SIZE;   // first file starts after the 12-byte header
@@ -188,9 +189,9 @@ public class SaveDataContainer
         // Number of file entries
         BitConverter.TryWriteBytes(_blob.AsSpan(4), (uint)_entries.Count);
         // Original save version
-        BitConverter.TryWriteBytes(_blob.AsSpan(8), SAVE_VERSION);
+        BitConverter.TryWriteBytes(_blob.AsSpan(8), _saveVersion);
         // Current save version
-        BitConverter.TryWriteBytes(_blob.AsSpan(10), SAVE_VERSION);
+        BitConverter.TryWriteBytes(_blob.AsSpan(10), _saveVersion);
     }
 
     private void WriteFooter()
