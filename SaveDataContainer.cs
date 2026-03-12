@@ -23,15 +23,17 @@ public class SaveDataContainer
     public const int SAVE_FILE_HEADER_SIZE = 12;
     public const int FILE_ENTRY_SIZE = 144;
 
-    private readonly short _saveVersion;
+    private readonly short _originalSaveVersion;
+    private readonly short _currentSaveVersion;
 
     private readonly List<SaveFileEntry> _entries = new();
     private byte[] _blob;
     private int _dataEnd; // points to the end of file data (start of footer)
 
-    public SaveDataContainer(short saveVersion)
+    public SaveDataContainer(short originalSaveVersion, short currentSaveVersion)
     {
-        _saveVersion = saveVersion;
+        _originalSaveVersion = originalSaveVersion;
+        _currentSaveVersion = currentSaveVersion;
 
         // Start with a reasonably sized buffer
         _blob = new byte[2 * 1024 * 1024]; // 2MB initial
@@ -194,9 +196,9 @@ public class SaveDataContainer
         // Number of file entries
         BitConverter.TryWriteBytes(_blob.AsSpan(4), (uint)_entries.Count);
         // Original save version
-        BitConverter.TryWriteBytes(_blob.AsSpan(8), _saveVersion);
+        BitConverter.TryWriteBytes(_blob.AsSpan(8), _originalSaveVersion);
         // Current save version
-        BitConverter.TryWriteBytes(_blob.AsSpan(10), _saveVersion);
+        BitConverter.TryWriteBytes(_blob.AsSpan(10), _currentSaveVersion);
     }
 
     private void WriteFooter()

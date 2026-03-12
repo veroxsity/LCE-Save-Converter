@@ -8,6 +8,10 @@ namespace LceWorldConverter;
 /// </summary>
 public static class ChunkConverter
 {
+    // Stability-first default: converted worlds should load even when source entity schemas differ.
+    // Set by CLI flag (--preserve-entities) when the caller explicitly wants dynamic data retained.
+    public static bool PreserveDynamicChunkData { get; set; }
+
     public const int CHUNK_BLOCKS = 32768;
     public const int CHUNK_NIBBLES = 16384;
     public const int HEIGHTMAP_SIZE = 256;
@@ -102,23 +106,29 @@ public static class ChunkConverter
 
         // Modern Java chunks (1.13+) often contain entity/tile-entity data that is not
         // compatible with TU19 deserializers. Writing empty lists is safer than crashing.
-        var entities = isModernChunkLayout
-            ? new NbtList("Entities", NbtTagType.Compound)
-            : (NbtList)CloneOrEmptyList(sourceLevel, "Entities");
-        SanitizeEntities(entities);
-        SanitizeLegacyItemStacks(entities);
-        RemapEntityPositions(entities, blockOffsetX, blockOffsetZ);
+        var entities = (PreserveDynamicChunkData && !isModernChunkLayout)
+            ? (NbtList)CloneOrEmptyList(sourceLevel, "Entities")
+            : new NbtList("Entities", NbtTagType.Compound);
+        if (PreserveDynamicChunkData)
+        {
+            SanitizeEntities(entities);
+            SanitizeLegacyItemStacks(entities);
+            RemapEntityPositions(entities, blockOffsetX, blockOffsetZ);
+        }
         level.Add(entities);
 
-        var tileEntities = isModernChunkLayout
-            ? new NbtList("TileEntities", NbtTagType.Compound)
-            : CloneListOrEmpty(sourceLevel, "TileEntities", "block_entities");
+        var tileEntities = (PreserveDynamicChunkData && !isModernChunkLayout)
+            ? CloneListOrEmpty(sourceLevel, "TileEntities", "block_entities")
+            : new NbtList("TileEntities", NbtTagType.Compound);
         tileEntities.Name = "TileEntities";
-        SanitizeLegacyItemStacks(tileEntities);
-        RemapTileEntityPositions(tileEntities, blockOffsetX, blockOffsetZ);
+        if (PreserveDynamicChunkData)
+        {
+            SanitizeLegacyItemStacks(tileEntities);
+            RemapTileEntityPositions(tileEntities, blockOffsetX, blockOffsetZ);
+        }
         level.Add(tileEntities);
 
-        if (!isModernChunkLayout && (sourceLevel.Contains("TileTicks") || sourceLevel.Contains("block_ticks")))
+        if (PreserveDynamicChunkData && !isModernChunkLayout && (sourceLevel.Contains("TileTicks") || sourceLevel.Contains("block_ticks")))
         {
             var tileTicks = CloneListOrEmpty(sourceLevel, "TileTicks", "block_ticks");
             tileTicks.Name = "TileTicks";

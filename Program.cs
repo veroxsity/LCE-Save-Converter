@@ -4,8 +4,10 @@ namespace LceWorldConverter;
 
 class Program
 {
-    // Use pre-v8 save format so chunk payloads are loaded via NBT path, which is the most stable conversion target.
-    private const short OutputSaveVersion = 7;
+    // Keep original save version pre-v8 so chunks are loaded from NBT payloads.
+    // Set current save version to latest TU19 to match normal WIN64 save headers.
+    private const short OutputOriginalSaveVersion = 7;
+    private const short OutputCurrentSaveVersion = 9;
 
     static void Main(string[] args)
     {
@@ -26,13 +28,15 @@ class Program
 
         if (args.Length < 1)
         {
-            Console.WriteLine("Usage: LceWorldConverter <java_world_path> [output_dir] [--large-world] [--all-dimensions]");
+            Console.WriteLine("Usage: LceWorldConverter <java_world_path> [output_dir] [--large-world] [--all-dimensions] [--copy-players] [--preserve-entities]");
             Console.WriteLine();
             Console.WriteLine("  java_world_path  Path to Java Edition world folder (containing level.dat)");
             Console.WriteLine("  output_dir       Optional: directory to write saveData.ms into.");
             Console.WriteLine("                   Defaults to a folder named after the world in the current directory.");
             Console.WriteLine("  --large-world    Use 320-chunk (5120 block) world size instead of 54-chunk (864 block)");
             Console.WriteLine("  --all-dimensions Convert Nether and End in addition to Overworld (experimental)");
+            Console.WriteLine("  --copy-players   Import Java players/*.dat (numeric filenames only)");
+            Console.WriteLine("  --preserve-entities Keep chunk Entities/TileEntities/TileTicks (may reduce compatibility)");
             return;
         }
 
@@ -43,6 +47,8 @@ class Program
         string? outputDirArg = args.Length > 1 && !args[1].StartsWith("--") ? args[1] : null;
         bool largeWorld = args.Contains("--large-world");
         bool convertAllDimensions = args.Contains("--all-dimensions");
+        bool copyPlayers = args.Contains("--copy-players");
+        bool preserveEntities = args.Contains("--preserve-entities");
 
         string worldName = Path.GetFileName(javaWorldPath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
         string outputDir = outputDirArg ?? Path.Combine(Directory.GetCurrentDirectory(), worldName);
@@ -75,6 +81,7 @@ class Program
 
         // Start a fresh per-run mapping audit for modern palette entries that still fall back to air.
         ChunkConverter.ResetUnknownModernBlocks();
+        ChunkConverter.PreserveDynamicChunkData = preserveEntities;
 
         try
         {
@@ -96,7 +103,7 @@ class Program
             Console.WriteLine();
 
             // Step 3: Create output container
-            var container = new SaveDataContainer(OutputSaveVersion);
+            var container = new SaveDataContainer(OutputOriginalSaveVersion, OutputCurrentSaveVersion);
 
             // Pre-create default region file entries in the order the real game expects:
             // DIM-1 (nether) first, then DIM1 (end), then overworld
@@ -149,9 +156,17 @@ class Program
             // Step 9: Copy and remap player data
             int blockOffsetX = spawnChunkX * 16;
             int blockOffsetZ = spawnChunkZ * 16;
-            Console.Write("Copying player data... ");
-            int playersCopied = CopyPlayers(javaWorldPath, container, blockOffsetX, blockOffsetZ);
-            Console.WriteLine($"{playersCopied} player(s)");
+            int playersCopied = 0;
+            if (copyPlayers)
+            {
+                Console.Write("Copying player data... ");
+                playersCopied = CopyPlayers(javaWorldPath, container, blockOffsetX, blockOffsetZ);
+                Console.WriteLine($"{playersCopied} player(s)");
+            }
+            else
+            {
+                Console.WriteLine("Skipping player data import (use --copy-players to enable).");
+            }
 
             // Step 10: Save output
             Console.Write("Writing saveData.ms... ");
@@ -201,6 +216,7 @@ class Program
     /// Copies player .dat files from the Java world into the saveData.ms container.
     /// Remaps the player's absolute position and set-spawn by subtracting the world recentring offset.
     /// Only legacy players/ files are copied; modern playerdata/ files are not TU19-compatible.
+    /// Only numeric filenames are imported to avoid invalid PlayerUID parsing in TU19.
     /// </summary>
     static int CopyPlayers(string javaWorldPath, SaveDataContainer container, int blockOffsetX, int blockOffsetZ)
     {
@@ -217,6 +233,13 @@ class Program
             {
                 try
                 {
+                    string fileStem = Path.GetFileNameWithoutExtension(filePath);
+                    if (!ulong.TryParse(fileStem, out ulong parsedPlayerId))
+                    {
+                        // Java commonly uses non-numeric player names; TU19 expects PlayerUID-style numeric filenames.
+                        continue;
+                    }
+
                     var nbtFile = new NbtFile();
                     nbtFile.LoadFromFile(filePath);
                     var player = nbtFile.RootTag;
@@ -237,11 +260,11 @@ class Program
 
                     // Serialise back to GZip NBT bytes
                     using var ms = new MemoryStream();
-                    nbtFile.SaveToStream(ms, NbtCompression.GZip);
+                    nbtFile.SaveToStream(ms, NbtCompression.None);
                     byte[] remapped = ms.ToArray();
 
-                    // Store as players/<filename> in the container
-                    string entryName = "players/" + Path.GetFileName(filePath);
+                    // Store as players/<numeric-id>.dat in the container
+                    string entryName = "players/" + parsedPlayerId + ".dat";
                     var entry = container.CreateFile(entryName);
                     container.WriteToFile(entry, remapped);
                     count++;

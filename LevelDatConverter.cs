@@ -107,8 +107,9 @@ public static class LevelDatConverter
         var root = new NbtCompound("") { lceData };
         var nbtFile = new NbtFile(root);
 
-        // LCE stores level.dat as raw uncompressed NBT inside saveData.ms
-        // (the container itself is zlib-compressed on disk)
+        // In this TU19 source tree, NbtIo::readCompressed no longer wraps a
+        // GZip stream and instead reads raw NBT directly from the save file.
+        // Therefore level.dat bytes inside saveData.ms must be uncompressed NBT.
         using var ms = new MemoryStream();
         nbtFile.SaveToStream(ms, NbtCompression.None);
         return ms.ToArray();
