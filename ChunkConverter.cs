@@ -15,10 +15,9 @@ public static class ChunkConverter
 
     public static byte[] ConvertChunk(NbtCompound rootTag, int newChunkX, int newChunkZ)
     {
-        var sourceLevel = rootTag.Get<NbtCompound>("Level");
-        if (sourceLevel == null) return Array.Empty<byte>();
+        var sourceLevel = rootTag.Get<NbtCompound>("Level") ?? rootTag;
 
-        bool isAnvil = sourceLevel.Contains("Sections");
+        bool isAnvil = sourceLevel.Contains("Sections") || sourceLevel.Contains("sections");
 
         byte[] blocks;
         byte[] data;
@@ -70,13 +69,15 @@ public static class ChunkConverter
         RemapEntityPositions(entities, blockOffsetX, blockOffsetZ);
         level.Add(entities);
 
-        var tileEntities = (NbtList)CloneOrEmptyList(sourceLevel, "TileEntities");
+        var tileEntities = CloneListOrEmpty(sourceLevel, "TileEntities", "block_entities");
+        tileEntities.Name = "TileEntities";
         RemapTileEntityPositions(tileEntities, blockOffsetX, blockOffsetZ);
         level.Add(tileEntities);
 
-        if (sourceLevel.Contains("TileTicks"))
+        if (sourceLevel.Contains("TileTicks") || sourceLevel.Contains("block_ticks"))
         {
-            var tileTicks = (NbtList)sourceLevel["TileTicks"]!.Clone();
+            var tileTicks = CloneListOrEmpty(sourceLevel, "TileTicks", "block_ticks");
+            tileTicks.Name = "TileTicks";
             RemapTileTickPositions(tileTicks, blockOffsetX, blockOffsetZ);
             level.Add(tileTicks);
         }
@@ -96,6 +97,17 @@ public static class ChunkConverter
         return new NbtList(name, NbtTagType.Compound);
     }
 
+    private static NbtList CloneListOrEmpty(NbtCompound sourceLevel, params string[] names)
+    {
+        foreach (string name in names)
+        {
+            if (sourceLevel.Contains(name) && sourceLevel[name] is NbtList list)
+                return (NbtList)list.Clone();
+        }
+
+        return new NbtList(names[0], NbtTagType.Compound);
+    }
+
     private static void FlattenAnvilSections(
         NbtCompound level,
         out byte[] blocks,
@@ -109,7 +121,7 @@ public static class ChunkConverter
         blockLight = new byte[CHUNK_NIBBLES];
         Array.Fill(skyLight, (byte)0xFF);
 
-        var sections = level.Get<NbtList>("Sections");
+        var sections = level.Get<NbtList>("Sections") ?? level.Get<NbtList>("sections");
         if (sections == null) return;
 
         foreach (NbtTag sectionTag in sections)
@@ -122,8 +134,8 @@ public static class ChunkConverter
             if (!TryDecodeSectionBlocks(section, out byte[] sBlocks, out byte[] sData))
                 continue;
 
-            byte[]? sSky = section.Get<NbtByteArray>("SkyLight")?.Value;
-            byte[]? sBlock = section.Get<NbtByteArray>("BlockLight")?.Value;
+            byte[]? sSky = section.Get<NbtByteArray>("SkyLight")?.Value ?? section.Get<NbtByteArray>("sky_light")?.Value;
+            byte[]? sBlock = section.Get<NbtByteArray>("BlockLight")?.Value ?? section.Get<NbtByteArray>("block_light")?.Value;
 
             int baseY = sectionY * 16;
 
@@ -163,7 +175,8 @@ public static class ChunkConverter
         blocks = new byte[4096];
         data = new byte[2048];
 
-        var palette = section.Get<NbtList>("Palette");
+        var blockStatesContainer = section.Get<NbtCompound>("block_states");
+        var palette = section.Get<NbtList>("Palette") ?? blockStatesContainer?.Get<NbtList>("palette");
         if (palette == null || palette.Count == 0)
             return false;
 
@@ -182,7 +195,8 @@ public static class ChunkConverter
             return true;
         }
 
-        if (section["BlockStates"] is not NbtLongArray blockStatesTag)
+        NbtLongArray? blockStatesTag = section["BlockStates"] as NbtLongArray ?? blockStatesContainer?.Get<NbtLongArray>("data");
+        if (blockStatesTag == null)
             return false;
 
         long[] blockStates = blockStatesTag.Value;

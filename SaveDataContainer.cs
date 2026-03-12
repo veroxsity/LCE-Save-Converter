@@ -176,7 +176,12 @@ public class SaveDataContainer
         byte[] compressedData = compressedStream.ToArray();
 
         // Write the on-disk format: [0 int][decompSize int][compressed data]
-        using var fs = new FileStream(outputPath, FileMode.Create, FileAccess.Write);
+        string fullOutputPath = Path.GetFullPath(outputPath);
+        string? outputDirectory = Path.GetDirectoryName(fullOutputPath);
+        if (!string.IsNullOrEmpty(outputDirectory))
+            Directory.CreateDirectory(outputDirectory);
+
+        using var fs = new FileStream(fullOutputPath, FileMode.Create, FileAccess.Write);
         fs.Write(BitConverter.GetBytes((int)0));            // compressed flag
         fs.Write(BitConverter.GetBytes((int)totalSize));    // decompressed size
         fs.Write(compressedData);                           // zlib compressed blob
