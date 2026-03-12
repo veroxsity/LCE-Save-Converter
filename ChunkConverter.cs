@@ -56,6 +56,10 @@ public static class ChunkConverter
         long inhabitedTime = sourceLevel.Get<NbtLong>("InhabitedTime")?.Value ?? 0;
 
         // Build the root + Level compound expected by NbtIo::read in old chunk path.
+        // TerrainPopulatedFlags encodes which post-processing passes have been completed.
+        // Value: sTerrainPopulatedAllNeighbours (1022) | sTerrainPostPostProcessed (1024) = 2046
+        // Source: LevelChunk.h constants + EmptyLevelChunk.cpp initialization
+        const short TERRAIN_POPULATED_FLAGS = 2046;  // 0x07FE
         var level = new NbtCompound("Level")
         {
             new NbtInt("xPos", newChunkX),
@@ -67,7 +71,7 @@ public static class ChunkConverter
             new NbtByteArray("SkyLight", skyLight),
             new NbtByteArray("BlockLight", blockLight),
             new NbtByteArray("HeightMap", heightMap),
-            new NbtShort("TerrainPopulatedFlags", 0x3F),
+            new NbtShort("TerrainPopulatedFlags", TERRAIN_POPULATED_FLAGS),
             new NbtByteArray("Biomes", biomes),
         };
 
