@@ -75,14 +75,18 @@ class Program
             // Step 3: Create output container
             var container = new SaveDataContainer();
 
-            // Step 4: Write LCE level.dat
-            Console.Write("Converting level.dat... ");
-            byte[] lceLevelDat = LevelDatConverter.Convert(javaLevelDat, spawnChunkX, spawnChunkZ, largeWorld);
-            var levelDatEntry = container.CreateFile("level.dat");
-            container.WriteToFile(levelDatEntry, lceLevelDat);
-            Console.WriteLine("OK");
+            // Pre-create default region file entries in the order the real game expects:
+            // DIM-1 (nether) first, then DIM1 (end), then overworld
+            // From McRegionChunkStorage.cpp and real save analysis
+            string[] defaultRegionOrder = {
+                "DIM-1r.-1.-1.mcr", "DIM-1r.0.-1.mcr", "DIM-1r.0.0.mcr", "DIM-1r.-1.0.mcr",
+                "DIM1/r.-1.-1.mcr", "DIM1/r.0.-1.mcr", "DIM1/r.0.0.mcr", "DIM1/r.-1.0.mcr",
+                "r.-1.-1.mcr", "r.0.-1.mcr", "r.0.0.mcr", "r.-1.0.mcr"
+            };
+            foreach (var name in defaultRegionOrder)
+                container.CreateFile(name);
 
-            // Step 5: Convert overworld chunks
+            // Step 4: Convert overworld chunks
             Console.WriteLine($"Converting overworld ({xzSize}x{xzSize} chunks)...");
             int owConverted = ConvertDimension(reader, container, "",
                 halfSize, spawnChunkX, spawnChunkZ);
@@ -103,7 +107,14 @@ class Program
                 endHalfSize, 0, 0);
             Console.WriteLine($"  {endConverted} chunks converted");
 
-            // Step 8: Save output
+            // Step 8: Write LCE level.dat (after region files, matching real save order)
+            Console.Write("Converting level.dat... ");
+            byte[] lceLevelDat = LevelDatConverter.Convert(javaLevelDat, spawnChunkX, spawnChunkZ, largeWorld);
+            var levelDatEntry = container.CreateFile("level.dat");
+            container.WriteToFile(levelDatEntry, lceLevelDat);
+            Console.WriteLine("OK");
+
+            // Step 9: Save output
             Console.Write("Writing saveData.ms... ");
             container.Save(outputPath);
             Console.WriteLine("OK");
@@ -140,9 +151,15 @@ class Program
         foreach (var (rx, rz, path) in regionFiles)
             regionLookup[(rx, rz)] = path;
 
-        // LCE region file prefix for nether/end inside saveData.ms
-        // Source shows: "DIM-1/" for nether, "DIM1/" for end, "" for overworld
-        string lcePrefix = string.IsNullOrEmpty(dimensionPrefix) ? "" : dimensionPrefix + "/";
+        // LCE region file prefix inside saveData.ms
+        // From real save analysis: Nether = "DIM-1" (no slash), End = "DIM1/" (with slash)
+        string lcePrefix;
+        if (dimensionPrefix == "DIM-1")
+            lcePrefix = "DIM-1";      // Nether: DIM-1r.X.Z.mcr
+        else if (dimensionPrefix == "DIM1")
+            lcePrefix = "DIM1/";      // End: DIM1/r.X.Z.mcr
+        else
+            lcePrefix = "";           // Overworld: r.X.Z.mcr
 
         // Cache of open LCE region files
         var lceRegions = new Dictionary<(int, int), LceRegionFile>();
@@ -259,6 +276,26 @@ class Program
             uint startOff = BitConverter.ToUInt32(raw, pos); pos += 4;
             long lastMod = BitConverter.ToInt64(raw, pos); pos += 8;
             Console.WriteLine($"  [{i}] \"{name}\" offset={startOff} len={length}");
+        }
+
+        // Check level.dat contents
+        if (fileCount > 0)
+        {
+            pos = (int)headerOffset;
+            for (int i = 0; i < (int)fileCount; i++)
+            {
+                string name = System.Text.Encoding.Unicode.GetString(raw, pos, 128).TrimEnd('\0');
+                uint len = BitConverter.ToUInt32(raw, pos + 128);
+                uint off = BitConverter.ToUInt32(raw, pos + 132);
+                pos += 144;
+
+                if (name == "level.dat" && len > 0)
+                {
+                    Console.WriteLine($"\n=== level.dat first 16 bytes at offset {off} ===");
+                    Console.WriteLine($"  {BitConverter.ToString(raw, (int)off, Math.Min(16, (int)len))}");
+                    break;
+                }
+            }
         }
 
         // Check first region file's chunk data header

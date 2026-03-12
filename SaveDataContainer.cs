@@ -54,10 +54,17 @@ public class SaveDataContainer
 
     /// <summary>
     /// Writes data to a file entry at its current position.
-    /// Grows the blob buffer if needed.
+    /// If the entry was empty (pre-created placeholder), relocates it to the current data end.
     /// </summary>
     public void WriteToFile(SaveFileEntry entry, byte[] data)
     {
+        // If this is a previously-empty entry, relocate it to the current data end
+        if (entry.Length == 0 && data.Length > 0)
+        {
+            entry.StartOffset = (uint)_dataEnd;
+            entry.CurrentPointer = (uint)_dataEnd;
+        }
+
         int writePos = (int)entry.CurrentPointer;
         int endPos = writePos + data.Length;
 

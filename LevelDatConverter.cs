@@ -92,8 +92,10 @@ public static class LevelDatConverter
         var root = new NbtCompound("") { lceData };
         var nbtFile = new NbtFile(root);
 
+        // LCE stores level.dat as raw uncompressed NBT inside saveData.ms
+        // (the container itself is zlib-compressed on disk)
         using var ms = new MemoryStream();
-        nbtFile.SaveToStream(ms, NbtCompression.GZip);
+        nbtFile.SaveToStream(ms, NbtCompression.None);
         return ms.ToArray();
     }
 
