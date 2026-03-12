@@ -134,7 +134,14 @@ class Program
             container.WriteToFile(levelDatEntry, lceLevelDat);
             Console.WriteLine("OK");
 
-            // Step 9: Save output
+            // Step 9: Copy and remap player data
+            int blockOffsetX = spawnChunkX * 16;
+            int blockOffsetZ = spawnChunkZ * 16;
+            Console.Write("Copying player data... ");
+            int playersCopied = CopyPlayers(javaWorldPath, container, blockOffsetX, blockOffsetZ);
+            Console.WriteLine($"{playersCopied} player(s)");
+
+            // Step 10: Save output
             Console.Write("Writing saveData.ms... ");
             container.Save(outputPath);
             Console.WriteLine("OK");
@@ -161,6 +168,65 @@ class Program
         if (r != 0 && value < 0)
             q--;
         return q;
+    }
+
+    /// <summary>
+    /// Copies player .dat files from the Java world into the saveData.ms container.
+    /// Remaps the player's absolute position and set-spawn by subtracting the world recentring offset.
+    /// Java 1.6.x stores players in players/, Java 1.7.10+ stores them in playerdata/.
+    /// </summary>
+    static int CopyPlayers(string javaWorldPath, SaveDataContainer container, int blockOffsetX, int blockOffsetZ)
+    {
+        // Try both player directory names
+        string[] candidateDirs = {
+            Path.Combine(javaWorldPath, "players"),
+            Path.Combine(javaWorldPath, "playerdata")
+        };
+
+        int count = 0;
+        foreach (var dir in candidateDirs)
+        {
+            if (!Directory.Exists(dir)) continue;
+            foreach (var filePath in Directory.GetFiles(dir, "*.dat"))
+            {
+                try
+                {
+                    var nbtFile = new NbtFile();
+                    nbtFile.LoadFromFile(filePath);
+                    var player = nbtFile.RootTag;
+
+                    // Remap absolute world position
+                    var pos = player.Get<NbtList>("Pos");
+                    if (pos != null && pos.Count >= 3)
+                    {
+                        ((NbtDouble)pos[0]).Value -= blockOffsetX;
+                        ((NbtDouble)pos[2]).Value -= blockOffsetZ;
+                    }
+
+                    // Remap set-home spawn (only valid if SpawnForced = 1 or SpawnX/Z are non-zero)
+                    var spawnX = player.Get<NbtInt>("SpawnX");
+                    var spawnZ = player.Get<NbtInt>("SpawnZ");
+                    if (spawnX != null) spawnX.Value -= blockOffsetX;
+                    if (spawnZ != null) spawnZ.Value -= blockOffsetZ;
+
+                    // Serialise back to GZip NBT bytes
+                    using var ms = new MemoryStream();
+                    nbtFile.SaveToStream(ms, NbtCompression.GZip);
+                    byte[] remapped = ms.ToArray();
+
+                    // Store as players/<filename> in the container
+                    string entryName = "players/" + Path.GetFileName(filePath);
+                    var entry = container.CreateFile(entryName);
+                    container.WriteToFile(entry, remapped);
+                    count++;
+                }
+                catch
+                {
+                    // Skip unreadable player files
+                }
+            }
+        }
+        return count;
     }
 
     /// <summary>

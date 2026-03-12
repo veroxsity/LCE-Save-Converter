@@ -58,10 +58,26 @@ public static class ChunkConverter
             new NbtByteArray("Biomes", biomes),
         };
 
-        level.Add(CloneOrEmptyList(sourceLevel, "Entities"));
-        level.Add(CloneOrEmptyList(sourceLevel, "TileEntities"));
+        // Compute the block-space offset applied to this chunk during world recentring.
+        int sourceChunkX = sourceLevel.Get<NbtInt>("xPos")?.Value ?? newChunkX;
+        int sourceChunkZ = sourceLevel.Get<NbtInt>("zPos")?.Value ?? newChunkZ;
+        int blockOffsetX = (sourceChunkX - newChunkX) * 16;
+        int blockOffsetZ = (sourceChunkZ - newChunkZ) * 16;
+
+        var entities = (NbtList)CloneOrEmptyList(sourceLevel, "Entities");
+        RemapEntityPositions(entities, blockOffsetX, blockOffsetZ);
+        level.Add(entities);
+
+        var tileEntities = (NbtList)CloneOrEmptyList(sourceLevel, "TileEntities");
+        RemapTileEntityPositions(tileEntities, blockOffsetX, blockOffsetZ);
+        level.Add(tileEntities);
+
         if (sourceLevel.Contains("TileTicks"))
-            level.Add((NbtTag)sourceLevel["TileTicks"]!.Clone());
+        {
+            var tileTicks = (NbtList)sourceLevel["TileTicks"]!.Clone();
+            RemapTileTickPositions(tileTicks, blockOffsetX, blockOffsetZ);
+            level.Add(tileTicks);
+        }
 
         var root = new NbtCompound("") { level };
         var file = new NbtFile(root);
@@ -170,5 +186,57 @@ public static class ChunkConverter
         }
 
         return new byte[defaultSize];
+    }
+
+    // Remap entity positions: subtract block offset from the Pos double list [x, y, z].
+    private static void RemapEntityPositions(NbtList entities, int blockOffsetX, int blockOffsetZ)
+    {
+        if (blockOffsetX == 0 && blockOffsetZ == 0) return;
+        foreach (NbtTag tag in entities)
+        {
+            if (tag is not NbtCompound entity) continue;
+            var pos = entity.Get<NbtList>("Pos");
+            if (pos != null && pos.Count >= 3)
+            {
+                ((NbtDouble)pos[0]).Value -= blockOffsetX;
+                ((NbtDouble)pos[2]).Value -= blockOffsetZ;
+            }
+
+            // Remap riding/passengers recursively
+            var riding = entity.Get<NbtCompound>("Riding");
+            if (riding != null)
+            {
+                var inner = new NbtList("tmp", NbtTagType.Compound) { (NbtCompound)riding.Clone() };
+                RemapEntityPositions(inner, blockOffsetX, blockOffsetZ);
+            }
+        }
+    }
+
+    // Remap tile entity positions: subtract block offset from integer x/z fields.
+    private static void RemapTileEntityPositions(NbtList tileEntities, int blockOffsetX, int blockOffsetZ)
+    {
+        if (blockOffsetX == 0 && blockOffsetZ == 0) return;
+        foreach (NbtTag tag in tileEntities)
+        {
+            if (tag is not NbtCompound te) continue;
+            var xTag = te.Get<NbtInt>("x");
+            var zTag = te.Get<NbtInt>("z");
+            if (xTag != null) xTag.Value -= blockOffsetX;
+            if (zTag != null) zTag.Value -= blockOffsetZ;
+        }
+    }
+
+    // Remap tile tick positions: subtract block offset from integer x/z fields.
+    private static void RemapTileTickPositions(NbtList tileTicks, int blockOffsetX, int blockOffsetZ)
+    {
+        if (blockOffsetX == 0 && blockOffsetZ == 0) return;
+        foreach (NbtTag tag in tileTicks)
+        {
+            if (tag is not NbtCompound tick) continue;
+            var xTag = tick.Get<NbtInt>("x");
+            var zTag = tick.Get<NbtInt>("z");
+            if (xTag != null) xTag.Value -= blockOffsetX;
+            if (zTag != null) zTag.Value -= blockOffsetZ;
+        }
     }
 }
