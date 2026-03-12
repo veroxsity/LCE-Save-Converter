@@ -62,6 +62,10 @@ If a world depends on exact modern block identity, visual parity may differ in t
 A valid `saveData.ms` file targeting the **Windows64 PC platform** (little-endian, save version 7).
 Drop it into your LCE server's `GameHDD/<worldname>/` folder and set `level-name` in `server.properties`.
 
+If modern blocks are encountered that still have no mapping, the converter also writes:
+
+- `unknown-modern-blocks.txt` (in the output directory): sorted list of block IDs that were mapped to air
+
 Compatible with the [smartcmd/MinecraftConsoles](https://github.com/smartcmd/MinecraftConsoles) dedicated server.
 
 ---
@@ -76,12 +80,48 @@ cd LCE-Save-Converter
 dotnet build
 ```
 
+Build release binaries locally for download:
+
+```powershell
+./scripts/Build-ReleaseArtifacts.ps1 -Version v1.0.0
+```
+
+This creates runtime-specific zip files in `release-assets/`.
+
+---
+
+## Automated GitHub Releases (Tag -> Build -> Publish)
+
+This repo includes a GitHub Actions workflow at `.github/workflows/release.yml`.
+
+When you push a tag that starts with `v` (for example `v1.0.0`), GitHub will:
+
+- Build self-contained single-file binaries
+- Target `win-x64`, `linux-x64`, `osx-x64`, and `osx-arm64`
+- Zip each runtime output
+- Create or update a GitHub Release and upload the zip assets
+
+Create and push a release tag with the helper script:
+
+```powershell
+./scripts/New-ReleaseTag.ps1 -VersionTag v1.0.0
+```
+
+Or do it manually:
+
+```bash
+git tag -a v1.0.0 -m "Release v1.0.0"
+git push origin v1.0.0
+```
+
+After the workflow completes, users can download binaries directly from the GitHub Releases page without building from source.
+
 ---
 
 ## Usage
 
 ```
-dotnet run -- <java_world_folder> [output_dir] [--large-world]
+dotnet run -- <java_world_folder> [output_dir] [--large-world] [--all-dimensions]
 ```
 
 | Argument | Description |
@@ -89,10 +129,17 @@ dotnet run -- <java_world_folder> [output_dir] [--large-world]
 | `java_world_folder` | Path to the Java Edition world folder (must contain `level.dat`) |
 | `output_dir` | Optional. Directory to write `saveData.ms` into. Defaults to a folder named after the world in the current directory. |
 | `--large-world` | Use 320-chunk (5120 block) world size instead of the default 54-chunk (864 block) legacy size. |
+| `--all-dimensions` | Also convert Nether and End. By default only Overworld is converted. |
+
+Inspect an existing `saveData.ms` container:
+
+```
+dotnet run -- --inspect <path_to_saveData.ms>
+```
 
 **Examples:**
 
-Convert a world — output goes to `./MyWorld/saveData.ms`:
+Convert Overworld only (default) — output goes to `./MyWorld/saveData.ms`:
 ```
 dotnet run -- "C:/Users/You/AppData/Roaming/.minecraft/saves/MyWorld"
 ```
@@ -100,6 +147,16 @@ dotnet run -- "C:/Users/You/AppData/Roaming/.minecraft/saves/MyWorld"
 Convert into a specific folder (e.g. an LCE save slot):
 ```
 dotnet run -- "C:/Users/You/AppData/Roaming/.minecraft/saves/MyWorld" "D:/GameHDD/MySlot"
+```
+
+Convert Overworld + Nether + End:
+```
+dotnet run -- "C:/Users/You/AppData/Roaming/.minecraft/saves/MyWorld" --all-dimensions
+```
+
+Convert as a large world and include all dimensions:
+```
+dotnet run -- "C:/Users/You/AppData/Roaming/.minecraft/saves/MyWorld" "D:/GameHDD/MySlot" --large-world --all-dimensions
 ```
 
 Then copy (or drop) the output `saveData.ms` into your LCE server's `GameHDD/<worldname>/` folder.

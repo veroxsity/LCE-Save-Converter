@@ -2,6 +2,9 @@ bin/
 obj/
 .vs/
 *.user
+artifacts/
+release-assets/
 CONVERTER_DOCS.md
 Minecraft-LegacyConsoleEdition/
 testing/
+scripts/

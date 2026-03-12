@@ -1,0 +1,66 @@
+name: Publish Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    name: Build and Publish (${{ matrix.runtime }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        runtime: [win-x64, linux-x64, osx-x64, osx-arm64]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+
+      - name: Restore
+        run: dotnet restore ./LceWorldConverter.csproj
+
+      - name: Publish single-file
+        shell: pwsh
+        run: |
+          $version = "${{ github.ref_name }}"
+          if (-not $version) {
+            $version = "dev-${{ github.run_number }}"
+          }
+
+          $outDir = Join-Path "${{ github.workspace }}" "artifacts/${{ matrix.runtime }}"
+          dotnet publish ./LceWorldConverter.csproj `
+            -c Release `
+            -r "${{ matrix.runtime }}" `
+            --self-contained true `
+            -p:PublishSingleFile=true `
+            -p:IncludeNativeLibrariesForSelfExtract=true `
+            -o $outDir
+
+          $assetsDir = Join-Path "${{ github.workspace }}" "release-assets"
+          New-Item -ItemType Directory -Path $assetsDir -Force | Out-Null
+
+          $zipName = "LCE-Save-Converter-$version-${{ matrix.runtime }}.zip"
+          $zipPath = Join-Path $assetsDir $zipName
+          if (Test-Path $zipPath) {
+            Remove-Item $zipPath -Force
+          }
+
+          Compress-Archive -Path (Join-Path $outDir "*") -DestinationPath $zipPath
+
+      - name: Publish GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: release-assets/*.zip
