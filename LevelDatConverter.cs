@@ -33,6 +33,10 @@ public static class LevelDatConverter
         int spawnY = javaData.Get<NbtInt>("SpawnY")?.Value ?? 64;
         int spawnZ = javaData.Get<NbtInt>("SpawnZ")?.Value ?? 0;
 
+        // LCE TU19 chunk height is 128 blocks (0..127). Modern worlds may have SpawnY above this.
+        // Clamp to a safe playable range to avoid spawn/load instability on world open.
+        spawnY = Math.Clamp(spawnY, 1, 127);
+
         // Recentre spawn so it's relative to chunk (0,0)
         int newSpawnX = spawnX - (spawnChunkX * 16);
         int newSpawnZ = spawnZ - (spawnChunkZ * 16);
