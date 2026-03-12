@@ -173,14 +173,13 @@ class Program
     /// <summary>
     /// Copies player .dat files from the Java world into the saveData.ms container.
     /// Remaps the player's absolute position and set-spawn by subtracting the world recentring offset.
-    /// Java 1.6.x stores players in players/, Java 1.7.10+ stores them in playerdata/.
+    /// Only legacy players/ files are copied; modern playerdata/ files are not TU19-compatible.
     /// </summary>
     static int CopyPlayers(string javaWorldPath, SaveDataContainer container, int blockOffsetX, int blockOffsetZ)
     {
-        // Try both player directory names
+        // Only import legacy player files. Modern UUID playerdata can crash TU19 loaders.
         string[] candidateDirs = {
-            Path.Combine(javaWorldPath, "players"),
-            Path.Combine(javaWorldPath, "playerdata")
+            Path.Combine(javaWorldPath, "players")
         };
 
         int count = 0;
