@@ -45,8 +45,8 @@ public class LceRegionFile
         if (x < 0 || x >= 32 || z < 0 || z >= 32) return;
         if (uncompressedData.Length == 0) return;
 
-        // Compress using LCE RLE+zlib
-        byte[] compressed = LceCompression.Compress(uncompressedData);
+        // Use plain zlib payloads (RLE flag clear) for maximum compatibility.
+        byte[] compressed = LceCompression.CompressZlibOnly(uncompressedData);
 
         // Calculate sectors needed
         int totalSize = CHUNK_HEADER_SIZE + compressed.Length;
@@ -60,8 +60,8 @@ public class LceRegionFile
         // Seek to sector position and write chunk data
         _data.Seek(sectorNumber * SECTOR_BYTES, SeekOrigin.Begin);
 
-        // Compressed length with RLE flag (high bit set)
-        uint compLengthWithFlag = (uint)compressed.Length | 0x80000000;
+        // Compressed length with RLE flag clear.
+        uint compLengthWithFlag = (uint)compressed.Length;
         _data.Write(BitConverter.GetBytes(compLengthWithFlag));
         _data.Write(BitConverter.GetBytes((uint)uncompressedData.Length));
         _data.Write(compressed);

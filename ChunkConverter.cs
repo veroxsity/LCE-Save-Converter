@@ -402,6 +402,9 @@ public static class ChunkConverter
         if (TryMapDirectionalBlock(name, properties, out var directional))
             return directional;
 
+        if (TryMapFlattenedColoredBlock(name, out var flattenedColored))
+            return flattenedColored;
+
         if (ModernDirectMap.TryGetValue(name, out var direct))
             return direct;
 
@@ -575,6 +578,69 @@ public static class ChunkConverter
                 return false;
         }
     }
+
+    private static bool TryMapFlattenedColoredBlock(string name, out LegacyBlockState block)
+    {
+        block = default;
+
+        if (TrySplitColorPrefix(name, out byte colorData, out string suffix))
+        {
+            switch (suffix)
+            {
+                case "wool":
+                    block = new LegacyBlockState(35, colorData);
+                    return true;
+                case "stained_glass":
+                case "glass":
+                    block = new LegacyBlockState(95, colorData);
+                    return true;
+                case "stained_glass_pane":
+                case "glass_pane":
+                    block = new LegacyBlockState(160, colorData);
+                    return true;
+                case "stained_hardened_clay":
+                case "terracotta":
+                    block = new LegacyBlockState(159, colorData);
+                    return true;
+                case "concrete":
+                    block = new LegacyBlockState(172, colorData);
+                    return true;
+                case "concrete_powder":
+                    block = new LegacyBlockState(12, colorData);
+                    return true;
+                case "carpet":
+                    block = new LegacyBlockState(171, colorData);
+                    return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static bool TrySplitColorPrefix(string name, out byte colorData, out string suffix)
+    {
+        colorData = 0;
+        suffix = string.Empty;
+
+        foreach (var colorName in ColorNames)
+        {
+            string prefix = colorName + "_";
+            if (!name.StartsWith(prefix, StringComparison.Ordinal))
+                continue;
+
+            colorData = GetColorData(colorName);
+            suffix = name[prefix.Length..];
+            return true;
+        }
+
+        return false;
+    }
+
+    private static readonly string[] ColorNames =
+    {
+        "white", "orange", "magenta", "light_blue", "yellow", "lime", "pink", "gray",
+        "silver", "cyan", "purple", "blue", "brown", "green", "red", "black"
+    };
 
     private static bool TryMapWoodBlock(string name, NbtCompound? properties, out LegacyBlockState block)
     {

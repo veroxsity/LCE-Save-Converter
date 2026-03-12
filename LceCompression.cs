@@ -14,6 +14,14 @@ namespace LceWorldConverter;
 public static class LceCompression
 {
     /// <summary>
+    /// Compress using zlib only (no RLE pre-pass). Safer interoperability path.
+    /// </summary>
+    public static byte[] CompressZlibOnly(byte[] data)
+    {
+        return ZlibCompress(data);
+    }
+
+    /// <summary>
     /// Compress data using RLE then zlib (WIN64 format).
     /// </summary>
     public static byte[] Compress(byte[] data)
