@@ -763,21 +763,28 @@ public static class ChunkConverter
     }
 
     /// <summary>
-    /// Remaps block IDs that exist in Java 1.7–1.12 but not in LCE TU19 to safe equivalents.
-    /// Block IDs 0–163 are present in both Java 1.6.4 and LCE TU19 — they are not touched.
-    /// Some blocks (stained glass 95, packed ice 174, etc.) were also added to LCE in early TUs,
-    /// so they are left as-is. The replacements below handle blocks that truly didn't exist in TU19.
+    /// Remaps post-1.6.4 Java IDs and then sanitizes every block ID to the IDs that exist in LCE TU19.
+    /// This mirrors BlockReplacements::replace() behavior in the game source to avoid null Tile dereferences.
+    /// Valid LCE tile IDs are 0..160 and 170..173 (Tile.h constants).
     /// </summary>
     private static void RemapBlocks(byte[] blocks, byte[] data)
     {
         for (int i = 0; i < blocks.Length; i++)
         {
             byte id = blocks[i];
-            if (id < 165) continue; // All IDs below 165 are safe in LCE TU19
+            if (id >= 165 && BlockRemapTable.TryGetValue(id, out byte replacement))
+                id = replacement;
 
-            if (BlockRemapTable.TryGetValue(id, out byte replacement))
-                blocks[i] = replacement;
+            if (!IsValidLceTileId(id))
+                id = 0;
+
+            blocks[i] = id;
         }
+    }
+
+    private static bool IsValidLceTileId(byte id)
+    {
+        return id <= 160 || (id >= 170 && id <= 173);
     }
 
     /// <summary>
