@@ -76,7 +76,7 @@ class Program
 
         try
         {
-            var reader = new JavaWorldReader(javaWorldPath);
+            using var reader = new JavaWorldReader(javaWorldPath);
 
             // Step 1: Read Java level.dat
             Console.Write("Reading level.dat... ");

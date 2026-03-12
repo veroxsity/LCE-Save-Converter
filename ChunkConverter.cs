@@ -34,9 +34,13 @@ public static class ChunkConverter
         int dataVersion = rootTag.Get<NbtInt>("DataVersion")?.Value
             ?? rootTag.Get<NbtCompound>("Level")?.Get<NbtInt>("DataVersion")?.Value
             ?? 0;
-        // 1.13+ worlds use modern block/entity schemas even when some chunks still have a Level wrapper.
-        bool isModernChunkLayout = !hasLegacyLevelWrapper || dataVersion >= 1519;
         var sourceLevel = rootTag.Get<NbtCompound>("Level") ?? rootTag;
+
+        // 1.13+ worlds use modern block/entity schemas even when some chunks still keep a Level wrapper
+        // or have missing DataVersion tags in individual chunks.
+        bool isModernChunkLayout = !hasLegacyLevelWrapper
+            || dataVersion >= 1519
+            || HasModernChunkSchema(sourceLevel);
 
         bool isAnvil = sourceLevel.Contains("Sections") || sourceLevel.Contains("sections");
 
@@ -143,6 +147,28 @@ public static class ChunkConverter
         }
 
         return new NbtList(names[0], NbtTagType.Compound);
+    }
+
+    private static bool HasModernChunkSchema(NbtCompound level)
+    {
+        if (level.Contains("block_entities") || level.Contains("entities"))
+            return true;
+
+        var sections = level.Get<NbtList>("sections") ?? level.Get<NbtList>("Sections");
+        if (sections == null)
+            return false;
+
+        foreach (NbtTag sectionTag in sections)
+        {
+            if (sectionTag is not NbtCompound section)
+                continue;
+
+            // Post-flattening chunk formats use block_states (1.18+) or Palette/BlockStates (1.13-1.17).
+            if (section.Contains("block_states") || section.Contains("Palette") || section.Contains("BlockStates"))
+                return true;
+        }
+
+        return false;
     }
 
     private static void FlattenAnvilSections(
@@ -769,6 +795,9 @@ public static class ChunkConverter
                 case "concrete_powder":
                     block = new LegacyBlockState(12, colorData);
                     return true;
+                case "glazed_terracotta":
+                    block = new LegacyBlockState(159, colorData);
+                    return true;
                 case "carpet":
                     block = new LegacyBlockState(171, colorData);
                     return true;
@@ -887,6 +916,9 @@ public static class ChunkConverter
     private static bool TryMapVariantBlock(string name, NbtCompound? properties, out LegacyBlockState block)
     {
         block = default;
+
+        if (TryMapCommonModernFallback(name, properties, out block))
+            return true;
 
         if (name == "redstone_lamp")
         {
@@ -1120,6 +1152,139 @@ public static class ChunkConverter
         }
 
         return false;
+    }
+
+    private static bool TryMapCommonModernFallback(string name, NbtCompound? properties, out LegacyBlockState block)
+    {
+        block = default;
+
+        if (name.EndsWith("_button", StringComparison.Ordinal))
+        {
+            block = new LegacyBlockState(IsWoodFamilyName(name) ? (byte)143 : (byte)77, 0);
+            return true;
+        }
+
+        if (name.EndsWith("_wall_sign", StringComparison.Ordinal))
+        {
+            block = new LegacyBlockState(68, 0);
+            return true;
+        }
+
+        if (name.EndsWith("_sign", StringComparison.Ordinal))
+        {
+            block = new LegacyBlockState(63, 0);
+            return true;
+        }
+
+        if (name.EndsWith("_wall", StringComparison.Ordinal))
+        {
+            block = new LegacyBlockState(139, 0);
+            return true;
+        }
+
+        if (name.EndsWith("_bed", StringComparison.Ordinal))
+        {
+            byte data = MapBedFacing(GetProperty(properties, "facing"));
+            if (GetProperty(properties, "part") == "head")
+                data |= 8;
+            block = new LegacyBlockState(26, data);
+            return true;
+        }
+
+        if (name.EndsWith("_banner", StringComparison.Ordinal))
+        {
+            block = new LegacyBlockState(0, 0);
+            return true;
+        }
+
+        switch (name)
+        {
+            case "barrier":
+            case "structure_void":
+                block = new LegacyBlockState(0, 0);
+                return true;
+            case "bamboo":
+                block = new LegacyBlockState(83, 0);
+                return true;
+            case "cake":
+                block = new LegacyBlockState(92, 0);
+                return true;
+            case "brewing_stand":
+                block = new LegacyBlockState(117, 0);
+                return true;
+            case "barrel":
+                block = new LegacyBlockState(54, 0);
+                return true;
+            case "blast_furnace":
+                block = new LegacyBlockState(61, 0);
+                return true;
+            case "campfire":
+                block = new LegacyBlockState(50, 0);
+                return true;
+            case "azure_bluet":
+            case "blue_orchid":
+                block = new LegacyBlockState(38, 0);
+                return true;
+            case "attached_melon_stem":
+                block = new LegacyBlockState(105, 7);
+                return true;
+            case "attached_pumpkin_stem":
+                block = new LegacyBlockState(104, 7);
+                return true;
+            case "andesite":
+            case "diorite":
+            case "granite":
+            case "polished_andesite":
+            case "polished_diorite":
+            case "polished_granite":
+                block = new LegacyBlockState(1, 0);
+                return true;
+            case "andesite_stairs":
+            case "diorite_stairs":
+            case "granite_stairs":
+            case "polished_andesite_stairs":
+            case "polished_diorite_stairs":
+            case "polished_granite_stairs":
+                block = new LegacyBlockState(109, 0);
+                return true;
+            case "bubble_column":
+                block = new LegacyBlockState(9, 0);
+                return true;
+            case "amethyst_block":
+            case "budding_amethyst":
+            case "amethyst_cluster":
+                block = new LegacyBlockState(20, 0);
+                return true;
+        }
+
+        return false;
+    }
+
+    private static bool IsWoodFamilyName(string name)
+    {
+        return name.Contains("oak", StringComparison.Ordinal)
+            || name.Contains("spruce", StringComparison.Ordinal)
+            || name.Contains("birch", StringComparison.Ordinal)
+            || name.Contains("jungle", StringComparison.Ordinal)
+            || name.Contains("acacia", StringComparison.Ordinal)
+            || name.Contains("dark_oak", StringComparison.Ordinal)
+            || name.Contains("mangrove", StringComparison.Ordinal)
+            || name.Contains("cherry", StringComparison.Ordinal)
+            || name.Contains("bamboo", StringComparison.Ordinal)
+            || name.Contains("crimson", StringComparison.Ordinal)
+            || name.Contains("warped", StringComparison.Ordinal);
+    }
+
+    private static byte MapBedFacing(string facing)
+    {
+        return facing switch
+        {
+            "south" => 0,
+            "west" => 1,
+            "north" => 2,
+            "east" => 3,
+            _ => 0,
+        };
     }
 
     private static string GetProperty(NbtCompound? properties, string name)

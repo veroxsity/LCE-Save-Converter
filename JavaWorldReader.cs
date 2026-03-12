@@ -17,13 +17,21 @@ namespace LceWorldConverter;
 ///   [1 byte]  Compression type: 1=GZip, 2=Deflate/zlib
 ///   [variable] Compressed NBT data
 /// </summary>
-public class JavaWorldReader
+public class JavaWorldReader : IDisposable
 {
     private readonly string _worldPath;
+    private readonly Dictionary<string, RegionReader> _regionReaders = new(StringComparer.OrdinalIgnoreCase);
 
     public JavaWorldReader(string worldPath)
     {
         _worldPath = worldPath;
+    }
+
+    public void Dispose()
+    {
+        foreach (var (_, reader) in _regionReaders)
+            reader.Dispose();
+        _regionReaders.Clear();
     }
 
     /// <summary>
@@ -88,50 +96,7 @@ public class JavaWorldReader
     /// </summary>
     public NbtCompound? ReadChunkNbt(string regionFilePath, int localX, int localZ)
     {
-        using var fs = new FileStream(regionFilePath, FileMode.Open, FileAccess.Read);
-        using var reader = new BinaryReader(fs);
-
-        // Read offset from table (big-endian)
-        int index = (localX & 31) + (localZ & 31) * 32;
-        fs.Seek(index * 4, SeekOrigin.Begin);
-        uint offsetEntry = ReadBigEndianUInt32(reader);
-
-        if (offsetEntry == 0) return null; // Chunk doesn't exist
-
-        uint sectorOffset = offsetEntry >> 8;
-        uint sectorCount = offsetEntry & 0xFF;
-
-        // Seek to the chunk data
-        fs.Seek(sectorOffset * 4096, SeekOrigin.Begin);
-
-        // Read chunk header (big-endian)
-        uint length = ReadBigEndianUInt32(reader);
-        byte compressionType = reader.ReadByte();
-
-        if (length <= 1) return null;
-
-        // Read compressed data
-        byte[] compressedData = reader.ReadBytes((int)(length - 1));
-
-        // Decompress based on type
-        byte[] decompressed;
-        switch (compressionType)
-        {
-            case 1: // GZip
-                decompressed = DecompressGZip(compressedData);
-                break;
-            case 2: // Deflate/zlib
-                decompressed = DecompressZlib(compressedData);
-                break;
-            default:
-                Console.Error.WriteLine($"Unknown compression type {compressionType} at chunk ({localX},{localZ})");
-                return null;
-        }
-
-        // Parse NBT
-        var nbtFile = new NbtFile();
-        nbtFile.LoadFromBuffer(decompressed, 0, decompressed.Length, NbtCompression.None);
-        return nbtFile.RootTag;
+        return GetOrCreateRegionReader(regionFilePath).ReadChunkNbt(localX, localZ);
     }
 
     /// <summary>
@@ -139,13 +104,18 @@ public class JavaWorldReader
     /// </summary>
     public bool HasChunk(string regionFilePath, int localX, int localZ)
     {
-        using var fs = new FileStream(regionFilePath, FileMode.Open, FileAccess.Read);
-        using var reader = new BinaryReader(fs);
+        return GetOrCreateRegionReader(regionFilePath).HasChunk(localX, localZ);
+    }
 
-        int index = (localX & 31) + (localZ & 31) * 32;
-        fs.Seek(index * 4, SeekOrigin.Begin);
-        uint offsetEntry = ReadBigEndianUInt32(reader);
-        return offsetEntry != 0;
+    private RegionReader GetOrCreateRegionReader(string regionFilePath)
+    {
+        if (!_regionReaders.TryGetValue(regionFilePath, out var reader))
+        {
+            reader = new RegionReader(regionFilePath);
+            _regionReaders[regionFilePath] = reader;
+        }
+
+        return reader;
     }
 
     /// <summary>
@@ -188,4 +158,75 @@ public class JavaWorldReader
     }
 
     #endregion
+
+    private sealed class RegionReader : IDisposable
+    {
+        private readonly FileStream _stream;
+        private readonly BinaryReader _reader;
+        private readonly uint[] _offsetTable = new uint[1024];
+
+        public RegionReader(string regionFilePath)
+        {
+            _stream = new FileStream(regionFilePath, FileMode.Open, FileAccess.Read, FileShare.Read);
+            _reader = new BinaryReader(_stream);
+
+            // Cache the 1024 offset entries from the region header once.
+            _stream.Seek(0, SeekOrigin.Begin);
+            for (int i = 0; i < 1024; i++)
+                _offsetTable[i] = ReadBigEndianUInt32(_reader);
+        }
+
+        public bool HasChunk(int localX, int localZ)
+        {
+            int index = (localX & 31) + (localZ & 31) * 32;
+            return _offsetTable[index] != 0;
+        }
+
+        public NbtCompound? ReadChunkNbt(int localX, int localZ)
+        {
+            int index = (localX & 31) + (localZ & 31) * 32;
+            uint offsetEntry = _offsetTable[index];
+            if (offsetEntry == 0)
+                return null;
+
+            uint sectorOffset = offsetEntry >> 8;
+            long chunkPos = sectorOffset * 4096L;
+            if (chunkPos + 5 > _stream.Length)
+                return null;
+
+            _stream.Seek(chunkPos, SeekOrigin.Begin);
+            uint length = ReadBigEndianUInt32(_reader);
+            byte compressionType = _reader.ReadByte();
+            if (length <= 1)
+                return null;
+
+            int compressedLength = (int)length - 1;
+            if (compressedLength < 0 || chunkPos + 5 + compressedLength > _stream.Length)
+                return null;
+
+            byte[] compressedData = _reader.ReadBytes(compressedLength);
+            if (compressedData.Length != compressedLength)
+                return null;
+
+            byte[] decompressed = compressionType switch
+            {
+                1 => DecompressGZip(compressedData),
+                2 => DecompressZlib(compressedData),
+                _ => Array.Empty<byte>(),
+            };
+
+            if (decompressed.Length == 0)
+                return null;
+
+            var nbtFile = new NbtFile();
+            nbtFile.LoadFromBuffer(decompressed, 0, decompressed.Length, NbtCompression.None);
+            return nbtFile.RootTag;
+        }
+
+        public void Dispose()
+        {
+            _reader.Dispose();
+            _stream.Dispose();
+        }
+    }
 }
