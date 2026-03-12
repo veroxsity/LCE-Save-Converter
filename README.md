@@ -1,6 +1,6 @@
 # LCE World Converter
 
-A C++ tool that converts Java Edition Minecraft worlds into the Minecraft Legacy Console Edition (LCE) `saveData.ms` format.
+A C# .NET 8 tool that converts Java Edition Minecraft worlds into the Minecraft Legacy Console Edition (LCE) `saveData.ms` format.
 
 Prior to the LCE source code becoming publicly available, no tool could properly convert worlds **to** LCE format because the `saveData.ms` container and internal chunk storage were completely undocumented. This project changes that.
 
@@ -29,7 +29,7 @@ Java Edition 1.6.4 and LCE TU19 are built on the same codebase — both use the 
 
 ## Output
 
-A valid `saveData.ms` file targeting the **Windows64 PC platform** (little-endian, save version 9).
+A valid `saveData.ms` file targeting the **Windows64 PC platform** (little-endian, save version 7).
 Drop it into your LCE server's `GameHDD/<worldname>/` folder and set `level-name` in `server.properties`.
 
 Compatible with the [smartcmd/MinecraftConsoles](https://github.com/smartcmd/MinecraftConsoles) dedicated server.
@@ -38,20 +38,12 @@ Compatible with the [smartcmd/MinecraftConsoles](https://github.com/smartcmd/Min
 
 ## Building
 
-Requires Visual Studio 2022 and the LCE source code.
+Requires [.NET 8 SDK](https://dotnet.microsoft.com/download).
 
 ```
-git clone <this repo>
-cd LceWorldConverter
-cmake -S . -B build -G "Visual Studio 17 2022" -A x64
-cmake --build build --config Release
-```
-
-The converter links against files from `Minecraft.World` in the LCE source tree.
-Set the `LCE_SOURCE_ROOT` CMake variable to point at your local clone of the LCE source:
-
-```
-cmake -S . -B build -DLCE_SOURCE_ROOT="/path/to/MinecraftConsoles" -G "Visual Studio 17 2022" -A x64
+git clone https://github.com/veroxsity/LCE-Save-Converter.git
+cd LCE-Save-Converter
+dotnet build
 ```
 
 ---
@@ -59,19 +51,28 @@ cmake -S . -B build -DLCE_SOURCE_ROOT="/path/to/MinecraftConsoles" -G "Visual St
 ## Usage
 
 ```
-LceWorldConverter.exe <java_world_folder> <output_saveData.ms> [options]
-
-Options:
-  --large-world     Use 320-chunk world size instead of legacy 54-chunk
-  --no-nether       Skip nether conversion
-  --no-end          Skip end conversion
+dotnet run -- <java_world_folder> [output_dir] [--large-world]
 ```
 
-Example:
+| Argument | Description |
+|---|---|
+| `java_world_folder` | Path to the Java Edition world folder (must contain `level.dat`) |
+| `output_dir` | Optional. Directory to write `saveData.ms` into. Defaults to a folder named after the world in the current directory. |
+| `--large-world` | Use 320-chunk (5120 block) world size instead of the default 54-chunk (864 block) legacy size. |
 
+**Examples:**
+
+Convert a world — output goes to `./MyWorld/saveData.ms`:
 ```
-LceWorldConverter.exe "path/to/JavaWorld" "path/to/output/saveData.ms"
+dotnet run -- "C:/Users/You/AppData/Roaming/.minecraft/saves/MyWorld"
 ```
+
+Convert into a specific folder (e.g. an LCE save slot):
+```
+dotnet run -- "C:/Users/You/AppData/Roaming/.minecraft/saves/MyWorld" "D:/GameHDD/MySlot"
+```
+
+Then copy (or drop) the output `saveData.ms` into your LCE server's `GameHDD/<worldname>/` folder.
 
 ---
 
