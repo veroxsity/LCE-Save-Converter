@@ -25,6 +25,11 @@ public static class LevelDatConverter
         if (javaData == null)
             throw new InvalidOperationException("Java level.dat missing 'Data' compound tag");
 
+        int dataVersion = javaData.Get<NbtInt>("DataVersion")?.Value
+            ?? javaRoot.Get<NbtInt>("DataVersion")?.Value
+            ?? 0;
+        bool isModernWorld = dataVersion >= 1519; // Java 1.13+
+
         int xzSize = largeWorld ? 320 : 54;
         int hellScale = 3;
 
@@ -41,14 +46,20 @@ public static class LevelDatConverter
         int newSpawnX = spawnX - (spawnChunkX * 16);
         int newSpawnZ = spawnZ - (spawnChunkZ * 16);
 
+        // Modern level.dat fields can contain generator names/options unknown to TU19.
+        // Use conservative defaults for modern worlds to avoid world-init crashes.
+        string safeGeneratorName = isModernWorld ? "default" : GetString(javaData, "generatorName", "default");
+        int safeGeneratorVersion = isModernWorld ? 1 : GetInt(javaData, "generatorVersion");
+        string safeGeneratorOptions = isModernWorld ? "" : GetString(javaData, "generatorOptions", "");
+
         // Build the LCE level.dat
         var lceData = new NbtCompound("Data")
         {
             // Standard Java fields
             new NbtLong("RandomSeed", GetLong(javaData, "RandomSeed")),
-            new NbtString("generatorName", GetString(javaData, "generatorName", "default")),
-            new NbtInt("generatorVersion", GetInt(javaData, "generatorVersion")),
-            new NbtString("generatorOptions", GetString(javaData, "generatorOptions", "")),
+            new NbtString("generatorName", safeGeneratorName),
+            new NbtInt("generatorVersion", safeGeneratorVersion),
+            new NbtString("generatorOptions", safeGeneratorOptions),
             new NbtInt("GameType", GetInt(javaData, "GameType")),
             new NbtByte("MapFeatures", GetBool(javaData, "MapFeatures", true)),
             new NbtInt("SpawnX", newSpawnX),
@@ -87,8 +98,8 @@ public static class LevelDatConverter
             new NbtInt("HellScale", hellScale),
         };
 
-        // Copy GameRules if present
-        if (javaData.Contains("GameRules"))
+        // Copy GameRules only for legacy worlds. Modern rule sets include unknown tags/values for TU19.
+        if (!isModernWorld && javaData.Contains("GameRules"))
         {
             lceData.Add((NbtTag)javaData["GameRules"]!.Clone());
         }
