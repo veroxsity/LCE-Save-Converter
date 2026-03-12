@@ -15,6 +15,8 @@ public static class ChunkConverter
 
     public static byte[] ConvertChunk(NbtCompound rootTag, int newChunkX, int newChunkZ)
     {
+        bool hasLegacyLevelWrapper = rootTag.Get<NbtCompound>("Level") != null;
+        bool isModernChunkLayout = !hasLegacyLevelWrapper;
         var sourceLevel = rootTag.Get<NbtCompound>("Level") ?? rootTag;
 
         bool isAnvil = sourceLevel.Contains("Sections") || sourceLevel.Contains("sections");
@@ -65,16 +67,22 @@ public static class ChunkConverter
         int blockOffsetX = (sourceChunkX - newChunkX) * 16;
         int blockOffsetZ = (sourceChunkZ - newChunkZ) * 16;
 
-        var entities = (NbtList)CloneOrEmptyList(sourceLevel, "Entities");
+        // Modern Java chunks (1.13+) often contain entity/tile-entity data that is not
+        // compatible with TU19 deserializers. Writing empty lists is safer than crashing.
+        var entities = isModernChunkLayout
+            ? new NbtList("Entities", NbtTagType.Compound)
+            : (NbtList)CloneOrEmptyList(sourceLevel, "Entities");
         RemapEntityPositions(entities, blockOffsetX, blockOffsetZ);
         level.Add(entities);
 
-        var tileEntities = CloneListOrEmpty(sourceLevel, "TileEntities", "block_entities");
+        var tileEntities = isModernChunkLayout
+            ? new NbtList("TileEntities", NbtTagType.Compound)
+            : CloneListOrEmpty(sourceLevel, "TileEntities", "block_entities");
         tileEntities.Name = "TileEntities";
         RemapTileEntityPositions(tileEntities, blockOffsetX, blockOffsetZ);
         level.Add(tileEntities);
 
-        if (sourceLevel.Contains("TileTicks") || sourceLevel.Contains("block_ticks"))
+        if (!isModernChunkLayout && (sourceLevel.Contains("TileTicks") || sourceLevel.Contains("block_ticks")))
         {
             var tileTicks = CloneListOrEmpty(sourceLevel, "TileTicks", "block_ticks");
             tileTicks.Name = "TileTicks";
