@@ -1,3 +1,5 @@
+using System.Text;
+using System.Text.Json;
 using fNbt;
 
 namespace LceWorldConverter;
@@ -117,14 +119,16 @@ public static class ChunkConverter
         }
         level.Add(entities);
 
-        var tileEntities = (PreserveDynamicChunkData && !isModernChunkLayout)
-            ? CloneListOrEmpty(sourceLevel, "TileEntities", "block_entities")
-            : new NbtList("TileEntities", NbtTagType.Compound);
+        var tileEntities = BuildCompatibleTileEntities(sourceLevel, isModernChunkLayout);
         tileEntities.Name = "TileEntities";
         RemoveUnsupportedTileEntities(tileEntities);
         if (PreserveDynamicChunkData)
         {
             SanitizeLegacyItemStacks(tileEntities);
+            RemapTileEntityPositions(tileEntities, blockOffsetX, blockOffsetZ);
+        }
+        else
+        {
             RemapTileEntityPositions(tileEntities, blockOffsetX, blockOffsetZ);
         }
         level.Add(tileEntities);
@@ -161,6 +165,60 @@ public static class ChunkConverter
         }
 
         return new NbtList(names[0], NbtTagType.Compound);
+    }
+
+    private static NbtList BuildCompatibleTileEntities(NbtCompound sourceLevel, bool isModernChunkLayout)
+    {
+        if (!isModernChunkLayout)
+        {
+            if (PreserveDynamicChunkData)
+                return CloneListOrEmpty(sourceLevel, "TileEntities", "block_entities");
+
+            return ExtractLegacySigns(sourceLevel);
+        }
+
+        return ExtractModernSigns(sourceLevel);
+    }
+
+    private static NbtList ExtractLegacySigns(NbtCompound sourceLevel)
+    {
+        var result = new NbtList("TileEntities", NbtTagType.Compound);
+        var source = CloneListOrEmpty(sourceLevel, "TileEntities", "block_entities");
+        foreach (NbtTag tag in source)
+        {
+            if (tag is not NbtCompound tileEntity)
+                continue;
+
+            string id = tileEntity.Get<NbtString>("id")?.Value ?? string.Empty;
+            if (id != "Sign")
+                continue;
+
+            var clone = (NbtCompound)tileEntity.Clone();
+            clone.Name = null;
+            result.Add(clone);
+        }
+
+        return result;
+    }
+
+    private static NbtList ExtractModernSigns(NbtCompound sourceLevel)
+    {
+        var result = new NbtList("TileEntities", NbtTagType.Compound);
+        var source = CloneListOrEmpty(sourceLevel, "block_entities", "TileEntities");
+        foreach (NbtTag tag in source)
+        {
+            if (tag is not NbtCompound blockEntity)
+                continue;
+
+            if (!IsModernSignTileEntity(blockEntity))
+                continue;
+
+            NbtCompound sign = ConvertModernSignTileEntity(blockEntity);
+            sign.Name = null;
+            result.Add(sign);
+        }
+
+        return result;
     }
 
     private static bool HasModernChunkSchema(NbtCompound level)
@@ -1461,6 +1519,128 @@ public static class ChunkConverter
             string id = tileEntity.Get<NbtString>("id")?.Value ?? string.Empty;
             if (id is "Control" or "minecraft:command_block" or "CommandBlock")
                 tileEntities.RemoveAt(i);
+        }
+    }
+
+    private static bool IsModernSignTileEntity(NbtCompound blockEntity)
+    {
+        string id = blockEntity.Get<NbtString>("id")?.Value ?? string.Empty;
+        if (string.IsNullOrEmpty(id))
+            return false;
+
+        if (id.StartsWith("minecraft:", StringComparison.Ordinal))
+            id = id[10..];
+
+        return id is "sign" or "hanging_sign" or "oak_sign" or "spruce_sign" or "birch_sign"
+            or "jungle_sign" or "acacia_sign" or "dark_oak_sign" or "mangrove_sign" or "cherry_sign"
+            or "bamboo_sign" or "crimson_sign" or "warped_sign" or "oak_hanging_sign"
+            or "spruce_hanging_sign" or "birch_hanging_sign" or "jungle_hanging_sign"
+            or "acacia_hanging_sign" or "dark_oak_hanging_sign" or "mangrove_hanging_sign"
+            or "cherry_hanging_sign" or "bamboo_hanging_sign" or "crimson_hanging_sign"
+            or "warped_hanging_sign";
+    }
+
+    private static NbtCompound ConvertModernSignTileEntity(NbtCompound blockEntity)
+    {
+        int x = ReadTileEntityCoord(blockEntity, "x");
+        int y = ReadTileEntityCoord(blockEntity, "y");
+        int z = ReadTileEntityCoord(blockEntity, "z");
+
+        string[] lines = ExtractModernSignLines(blockEntity);
+        for (int i = 0; i < lines.Length; i++)
+        {
+            if (lines[i].Length > 15)
+                lines[i] = lines[i][..15];
+        }
+
+        var sign = new NbtCompound(string.Empty)
+        {
+            new NbtString("id", "Sign"),
+            new NbtInt("x", x),
+            new NbtInt("y", y),
+            new NbtInt("z", z),
+            new NbtString("Text1", lines[0]),
+            new NbtString("Text2", lines[1]),
+            new NbtString("Text3", lines[2]),
+            new NbtString("Text4", lines[3]),
+        };
+        sign.Name = null;
+        return sign;
+    }
+
+    private static int ReadTileEntityCoord(NbtCompound blockEntity, string name)
+    {
+        return blockEntity.Get<NbtInt>(name)?.Value
+            ?? blockEntity.Get<NbtShort>(name)?.Value
+            ?? blockEntity.Get<NbtByte>(name)?.Value
+            ?? 0;
+    }
+
+    private static string[] ExtractModernSignLines(NbtCompound blockEntity)
+    {
+        string[] lines = new string[4];
+
+        var frontText = blockEntity.Get<NbtCompound>("front_text");
+        var messages = frontText?.Get<NbtList>("messages");
+        if (messages != null)
+        {
+            for (int i = 0; i < Math.Min(4, messages.Count); i++)
+            {
+                if (messages[i] is NbtString line)
+                    lines[i] = SimplifySignText(line.Value);
+            }
+            return lines;
+        }
+
+        for (int i = 0; i < 4; i++)
+        {
+            string key = $"Text{i + 1}";
+            string value = blockEntity.Get<NbtString>(key)?.Value ?? string.Empty;
+            lines[i] = SimplifySignText(value);
+        }
+
+        return lines;
+    }
+
+    private static string SimplifySignText(string raw)
+    {
+        if (string.IsNullOrEmpty(raw))
+            return string.Empty;
+
+        raw = raw.Trim();
+        if (!(raw.StartsWith("{", StringComparison.Ordinal) || raw.StartsWith("[", StringComparison.Ordinal) || raw.StartsWith("\"", StringComparison.Ordinal)))
+            return raw;
+
+        try
+        {
+            using JsonDocument doc = JsonDocument.Parse(raw);
+            var builder = new StringBuilder();
+            AppendJsonText(doc.RootElement, builder);
+            return builder.ToString();
+        }
+        catch
+        {
+            return raw.Trim('"');
+        }
+    }
+
+    private static void AppendJsonText(JsonElement element, StringBuilder builder)
+    {
+        switch (element.ValueKind)
+        {
+            case JsonValueKind.String:
+                builder.Append(element.GetString());
+                break;
+            case JsonValueKind.Array:
+                foreach (JsonElement item in element.EnumerateArray())
+                    AppendJsonText(item, builder);
+                break;
+            case JsonValueKind.Object:
+                if (element.TryGetProperty("text", out JsonElement textElement) && textElement.ValueKind == JsonValueKind.String)
+                    builder.Append(textElement.GetString());
+                if (element.TryGetProperty("extra", out JsonElement extraElement))
+                    AppendJsonText(extraElement, builder);
+                break;
         }
     }
 
