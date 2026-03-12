@@ -293,48 +293,78 @@ class Program
                 {
                     Console.WriteLine($"\n=== level.dat first 16 bytes at offset {off} ===");
                     Console.WriteLine($"  {BitConverter.ToString(raw, (int)off, Math.Min(16, (int)len))}");
-                    break;
                 }
             }
         }
 
-        // Check first region file's chunk data header
-        if (fileCount > 1)
+        // Decompress and inspect a real chunk from the first region file
+        pos = (int)headerOffset;
+        for (int i = 0; i < (int)fileCount; i++)
         {
-            // Find first .mcr entry
-            pos = (int)headerOffset;
-            for (int i = 0; i < (int)fileCount; i++)
-            {
-                string name = System.Text.Encoding.Unicode.GetString(raw, pos, 128).TrimEnd('\0');
-                uint len = BitConverter.ToUInt32(raw, pos + 128);
-                uint off = BitConverter.ToUInt32(raw, pos + 132);
-                pos += 144;
+            string name = System.Text.Encoding.Unicode.GetString(raw, pos, 128).TrimEnd('\0');
+            uint len = BitConverter.ToUInt32(raw, pos + 128);
+            uint off = BitConverter.ToUInt32(raw, pos + 132);
+            pos += 144;
 
-                if (name.EndsWith(".mcr") && len > 8192)
+            if (!name.EndsWith(".mcr") || len <= 8192) continue;
+
+            Console.WriteLine($"\n=== Deep inspect: {name} ===");
+            // Find first chunk
+            for (int ci = 0; ci < 1024; ci++)
+            {
+                uint chunkOff = BitConverter.ToUInt32(raw, (int)off + ci * 4);
+                if (chunkOff == 0) continue;
+
+                uint sectorNum = chunkOff >> 8;
+                int chunkDataPos = (int)(off + sectorNum * 4096);
+
+                uint compLenRaw = BitConverter.ToUInt32(raw, chunkDataPos);
+                bool rleFlag = (compLenRaw & 0x80000000) != 0;
+                uint compLen = compLenRaw & 0x7FFFFFFF;
+                uint decompLen = BitConverter.ToUInt32(raw, chunkDataPos + 4);
+
+                Console.WriteLine($"  Chunk index {ci}: compLen={compLen} decompLen={decompLen} rle={rleFlag}");
+
+                // Extract compressed data
+                byte[] compData = new byte[compLen];
+                Buffer.BlockCopy(raw, chunkDataPos + 8, compData, 0, (int)compLen);
+
+                try
                 {
-                    Console.WriteLine($"\n=== Inspecting region: {name} ===");
-                    // Read first non-zero offset from the offset table
-                    for (int ci = 0; ci < 1024; ci++)
+                    byte[] decompData = LceCompression.Decompress(compData, (int)decompLen);
+                    Console.WriteLine($"  Decompressed OK: {decompData.Length} bytes");
+                    Console.WriteLine($"  First 32 bytes: {BitConverter.ToString(decompData, 0, Math.Min(32, decompData.Length))}");
+
+                    // Try parsing as NBT
+                    try
                     {
-                        uint chunkOff = BitConverter.ToUInt32(raw, (int)off + ci * 4);
-                        if (chunkOff != 0)
+                        var nbtFile = new fNbt.NbtFile();
+                        nbtFile.LoadFromBuffer(decompData, 0, decompData.Length, fNbt.NbtCompression.None);
+                        var root = nbtFile.RootTag;
+                        Console.WriteLine($"  NBT root: {root.Name} ({root.TagType})");
+                        foreach (var tag in root)
+                            Console.WriteLine($"    {tag.Name}: {tag.TagType}");
+                        // If it has Level compound, show its children
+                        var level = root.Get<fNbt.NbtCompound>("Level");
+                        if (level != null)
                         {
-                            uint sectorNum = chunkOff >> 8;
-                            uint sectorCnt = chunkOff & 0xFF;
-                            int chunkDataPos = (int)(off + sectorNum * 4096);
-                            Console.WriteLine($"  First chunk at offset table index {ci}: sector={sectorNum} count={sectorCnt}");
-                            Console.WriteLine($"  Chunk data at byte {chunkDataPos}:");
-                            Console.WriteLine($"    First 16 bytes: {BitConverter.ToString(raw, chunkDataPos, 16)}");
-                            uint val0 = BitConverter.ToUInt32(raw, chunkDataPos);
-                            uint val1 = BitConverter.ToUInt32(raw, chunkDataPos + 4);
-                            Console.WriteLine($"    Word 0: 0x{val0:X8} ({val0 & 0x7FFFFFFF} bytes, RLE={((val0 & 0x80000000) != 0)})");
-                            Console.WriteLine($"    Word 1: 0x{val1:X8} ({val1} decompressed bytes)");
-                            break;
+                            Console.WriteLine($"  Level compound children:");
+                            foreach (var tag in level)
+                                Console.WriteLine($"    {tag.Name}: {tag.TagType} {(tag is fNbt.NbtByteArray ba ? $"[{ba.Value.Length}]" : tag is fNbt.NbtInt ni ? $"={ni.Value}" : "")}");
                         }
                     }
-                    break;
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine($"  NBT parse FAILED: {ex.Message}");
+                    }
                 }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"  Decompress FAILED: {ex.Message}");
+                }
+                break; // Only inspect first chunk
             }
+            break; // Only inspect first region
         }
     }
 }
