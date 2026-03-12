@@ -16,6 +16,17 @@ public static class ChunkConverter
     // Modern (1.13+) worlds can have sections above LCE's 0..127 range.
     // Use one shift value for the whole conversion run to keep chunk heights consistent.
     private static int? _globalModernSectionShift;
+    private static readonly HashSet<string> _unknownModernBlocks = new(StringComparer.Ordinal);
+
+    public static void ResetUnknownModernBlocks()
+    {
+        _unknownModernBlocks.Clear();
+    }
+
+    public static IReadOnlyList<string> GetUnknownModernBlocksSnapshot()
+    {
+        return _unknownModernBlocks.OrderBy(n => n, StringComparer.Ordinal).ToList();
+    }
 
     public static byte[] ConvertChunk(NbtCompound rootTag, int newChunkX, int newChunkZ)
     {
@@ -423,7 +434,19 @@ public static class ChunkConverter
         if (TryMapVariantBlock(name, properties, out var variant))
             return variant;
 
+        RecordUnknownModernBlock(name);
         return new LegacyBlockState(0, 0);
+    }
+
+    private static void RecordUnknownModernBlock(string name)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+            return;
+
+        if (name is "air" or "cave_air" or "void_air")
+            return;
+
+        _unknownModernBlocks.Add(name);
     }
 
     private static bool TryMapFluidBlock(string name, NbtCompound? properties, out LegacyBlockState block)

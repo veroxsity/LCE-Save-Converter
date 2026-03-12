@@ -71,6 +71,9 @@ class Program
         Console.WriteLine($"World size:  {xzSize} chunks ({xzSize * 16} blocks)");
         Console.WriteLine();
 
+        // Start a fresh per-run mapping audit for modern palette entries that still fall back to air.
+        ChunkConverter.ResetUnknownModernBlocks();
+
         try
         {
             var reader = new JavaWorldReader(javaWorldPath);
@@ -112,19 +115,17 @@ class Program
 
             // Step 6: Convert nether chunks
             Console.WriteLine($"Converting nether ({xzSize / hellScale}x{xzSize / hellScale} chunks)...");
-            // TODO: Nether coordinate remapping is complex due to scale mismatch:
-            // Java uses 1/8 scale, LCE uses 1/3 scale. For safety, skip Nether for now.
-            //int netherOffsetChunkX = FloorDiv(spawnChunkX, 8);
-            //int netherOffsetChunkZ = FloorDiv(spawnChunkZ, 8);
+            int netherOffsetChunkX = FloorDiv(spawnChunkX, 8);
+            int netherOffsetChunkZ = FloorDiv(spawnChunkZ, 8);
             int netherConverted = ConvertDimension(reader, container, "DIM-1",
-                hellHalfSize, 999999, 999999);  // Out-of-bounds to skip iteration
+                hellHalfSize, netherOffsetChunkX, netherOffsetChunkZ);
             Console.WriteLine($"  {netherConverted} chunks converted");
 
             // Step 7: Convert End chunks
             Console.WriteLine($"Converting end ({endHalfSize * 2}x{endHalfSize * 2} chunks)...");
-            // TODO: End dimension conversion not yet validated. Skip for safety.
+            // End is converted around 0,0 (legacy End spawn/platform centered near origin).
             int endConverted = ConvertDimension(reader, container, "DIM1",
-                endHalfSize, 999999, 999999);  // Out-of-bounds to skip iteration
+                endHalfSize, 0, 0);
             Console.WriteLine($"  {endConverted} chunks converted");
 
             // Step 8: Write LCE level.dat (after region files, matching real save order)
@@ -152,6 +153,17 @@ class Program
             Console.WriteLine($"  Nether:    {netherConverted} chunks");
             Console.WriteLine($"  End:       {endConverted} chunks");
             Console.WriteLine($"  Output:    {outputPath}");
+
+            var unknownBlocks = ChunkConverter.GetUnknownModernBlocksSnapshot();
+            if (unknownBlocks.Count > 0)
+            {
+                Console.WriteLine();
+                Console.WriteLine($"Unknown modern blocks mapped to air: {unknownBlocks.Count}");
+                foreach (string blockName in unknownBlocks.Take(40))
+                    Console.WriteLine($"  - {blockName}");
+                if (unknownBlocks.Count > 40)
+                    Console.WriteLine($"  ... and {unknownBlocks.Count - 40} more");
+            }
         }
         catch (Exception ex)
         {
