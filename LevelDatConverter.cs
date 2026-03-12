@@ -19,7 +19,7 @@ public static class LevelDatConverter
     /// Reads a Java level.dat and produces an LCE-compatible level.dat as bytes.
     /// spawnChunkX/Z are the Java spawn chunk coords used for recentring.
     /// </summary>
-    public static byte[] Convert(NbtCompound javaRoot, int spawnChunkX, int spawnChunkZ, bool largeWorld)
+    public static byte[] Convert(NbtCompound javaRoot, int spawnChunkX, int spawnChunkZ, bool largeWorld, int? overrideSpawnY = null)
     {
         var javaData = javaRoot.Get<NbtCompound>("Data");
         if (javaData == null)
@@ -39,8 +39,12 @@ public static class LevelDatConverter
         int spawnZ = javaData.Get<NbtInt>("SpawnZ")?.Value ?? 0;
 
         // LCE TU19 chunk height is 128 blocks (0..127).
-        // For modern worlds we force a safe spawn elevation to avoid void spawns.
-        spawnY = isModernWorld ? 64 : Math.Clamp(spawnY, 1, 127);
+        // If a terrain-derived spawn Y is provided, prefer it.
+        // For modern worlds we still keep a conservative fallback.
+        if (overrideSpawnY.HasValue)
+            spawnY = Math.Clamp(overrideSpawnY.Value, 1, 127);
+        else
+            spawnY = isModernWorld ? 64 : Math.Clamp(spawnY, 1, 127);
 
         // Recentre spawn so it's relative to chunk (0,0)
         int newSpawnX = spawnX - (spawnChunkX * 16);

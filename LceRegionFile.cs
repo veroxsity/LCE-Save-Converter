@@ -1,3 +1,5 @@
+using fNbt;
+
 namespace LceWorldConverter;
 
 /// <summary>
@@ -24,11 +26,14 @@ public class LceRegionFile
     private readonly MemoryStream _data;
     private readonly int[] _offsets = new int[SECTOR_INTS];
     private readonly int[] _timestamps = new int[SECTOR_INTS];
+    private readonly int _regionX;
+    private readonly int _regionZ;
     private int _sectorCount;
 
     public LceRegionFile(string filename)
     {
         _filename = filename;
+        (_regionX, _regionZ) = ParseRegionCoordinates(filename);
         _data = new MemoryStream();
 
         // Write two empty sectors (offset table + timestamp table)
@@ -45,7 +50,9 @@ public class LceRegionFile
         if (x < 0 || x >= 32 || z < 0 || z >= 32) return;
         if (uncompressedData.Length == 0) return;
 
-        // Match LCE RegionFile::write: RLE+compressed payload with high-bit flag set.
+        uncompressedData = ForceChunkCoordinates(uncompressedData, _regionX * 32 + x, _regionZ * 32 + z);
+        if (uncompressedData.Length == 0) return;
+
         byte[] compressed = LceCompression.Compress(uncompressedData);
 
         // Calculate sectors needed
@@ -60,9 +67,8 @@ public class LceRegionFile
         // Seek to sector position and write chunk data
         _data.Seek(sectorNumber * SECTOR_BYTES, SeekOrigin.Begin);
 
-        // High bit marks RLE-encoded payload (RegionFile.cpp).
-        uint compLengthWithFlag = (uint)compressed.Length | 0x80000000u;
-        _data.Write(BitConverter.GetBytes(compLengthWithFlag));
+        uint storedLength = (uint)compressed.Length | 0x80000000u;
+        _data.Write(BitConverter.GetBytes(storedLength));
         _data.Write(BitConverter.GetBytes((uint)uncompressedData.Length));
         _data.Write(compressed);
 
@@ -97,5 +103,56 @@ public class LceRegionFile
         byte[] regionBytes = _data.ToArray();
         var entry = container.CreateFile(_filename);
         container.WriteToFile(entry, regionBytes);
+    }
+
+    private static (int regionX, int regionZ) ParseRegionCoordinates(string filename)
+    {
+        string withoutExtension = Path.GetFileNameWithoutExtension(filename.Replace('/', Path.DirectorySeparatorChar));
+        string[] parts = withoutExtension.Split('.', StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length < 3)
+            throw new InvalidOperationException($"Invalid region file name: {filename}");
+
+        if (!int.TryParse(parts[^2], out int regionX) || !int.TryParse(parts[^1], out int regionZ))
+            throw new InvalidOperationException($"Invalid region coordinates in file name: {filename}");
+
+        return (regionX, regionZ);
+    }
+
+    private static byte[] ForceChunkCoordinates(byte[] chunkData, int expectedChunkX, int expectedChunkZ)
+    {
+        try
+        {
+            using var ms = new MemoryStream(chunkData);
+            var file = new NbtFile();
+            file.LoadFromStream(ms, NbtCompression.None);
+
+            NbtCompound root = file.RootTag;
+            NbtCompound? level = root.Get<NbtCompound>("Level");
+            if (level == null)
+                return Array.Empty<byte>();
+
+            UpsertTag(level, new NbtInt("xPos", expectedChunkX));
+            UpsertTag(level, new NbtInt("zPos", expectedChunkZ));
+
+            using var output = new MemoryStream();
+            file.SaveToStream(output, NbtCompression.None);
+            return output.ToArray();
+        }
+        catch
+        {
+            return Array.Empty<byte>();
+        }
+    }
+
+    private static void UpsertTag(NbtCompound compound, NbtTag tag)
+    {
+        string? name = tag.Name;
+        if (string.IsNullOrEmpty(name))
+            return;
+
+        if (compound.Contains(name))
+            compound.Remove(name);
+
+        compound.Add(tag);
     }
 }

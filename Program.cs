@@ -96,10 +96,16 @@ class Program
             // Step 2: Compute recentring offset from spawn
             int spawnX = javaData.Get<NbtInt>("SpawnX")?.Value ?? 0;
             int spawnZ = javaData.Get<NbtInt>("SpawnZ")?.Value ?? 0;
+            int spawnY = javaData.Get<NbtInt>("SpawnY")?.Value ?? 64;
             int spawnChunkX = spawnX >> 4;
             int spawnChunkZ = spawnZ >> 4;
             Console.WriteLine($"Java spawn:  ({spawnX}, {spawnZ}) -> chunk ({spawnChunkX}, {spawnChunkZ})");
             Console.WriteLine($"Recentring:  Java chunk ({spawnChunkX},{spawnChunkZ}) -> LCE chunk (0,0)");
+            int? estimatedSpawnY = EstimateSafeSpawnY(reader, spawnX, spawnY, spawnZ, spawnChunkX, spawnChunkZ);
+            if (estimatedSpawnY.HasValue)
+                Console.WriteLine($"Spawn Y:     {spawnY} -> {estimatedSpawnY.Value} (terrain-adjusted)");
+            else
+                Console.WriteLine($"Spawn Y:     {spawnY} (source/default)");
             Console.WriteLine();
 
             // Step 3: Create output container
@@ -148,7 +154,7 @@ class Program
 
             // Step 8: Write LCE level.dat (after region files, matching real save order)
             Console.Write("Converting level.dat... ");
-            byte[] lceLevelDat = LevelDatConverter.Convert(javaLevelDat, spawnChunkX, spawnChunkZ, largeWorld);
+            byte[] lceLevelDat = LevelDatConverter.Convert(javaLevelDat, spawnChunkX, spawnChunkZ, largeWorld, estimatedSpawnY);
             var levelDatEntry = container.CreateFile("level.dat");
             container.WriteToFile(levelDatEntry, lceLevelDat);
             Console.WriteLine("OK");
@@ -210,6 +216,104 @@ class Program
         if (r != 0 && value < 0)
             q--;
         return q;
+    }
+
+    static int? EstimateSafeSpawnY(
+        JavaWorldReader reader,
+        int spawnX,
+        int sourceSpawnY,
+        int spawnZ,
+        int spawnChunkX,
+        int spawnChunkZ)
+    {
+        try
+        {
+            int regionX = spawnChunkX >> 5;
+            int regionZ = spawnChunkZ >> 5;
+            string? regionPath = reader.GetRegionFiles("")
+                .FirstOrDefault(r => r.rx == regionX && r.rz == regionZ)
+                .path;
+            if (regionPath == null)
+                return null;
+
+            int localChunkX = ((spawnChunkX % 32) + 32) % 32;
+            int localChunkZ = ((spawnChunkZ % 32) + 32) % 32;
+            NbtCompound? root = reader.ReadChunkNbt(regionPath, localChunkX, localChunkZ);
+            if (root == null)
+                return null;
+
+            var level = root.Get<NbtCompound>("Level") ?? root;
+            int lx = ((spawnX % 16) + 16) % 16;
+            int lz = ((spawnZ % 16) + 16) % 16;
+            int idx2d = lx + (lz * 16);
+
+            var hmBytes = level.Get<NbtByteArray>("HeightMap")?.Value;
+            if (hmBytes != null && hmBytes.Length >= 256)
+            {
+                int h = hmBytes[idx2d] & 0xFF;
+                if (h > 0)
+                    return Math.Clamp(h + 1, 1, 127);
+            }
+
+            var hmInts = level.Get<NbtIntArray>("HeightMap")?.Value;
+            if (hmInts != null && hmInts.Length >= 256)
+            {
+                int h = hmInts[idx2d];
+                if (h > 0)
+                    return Math.Clamp(h + 1, 1, 127);
+            }
+
+            var blocks = level.Get<NbtByteArray>("Blocks")?.Value;
+            if (blocks != null && blocks.Length >= 32768)
+            {
+                for (int y = 127; y >= 1; y--)
+                {
+                    int flat = y * 256 + lz * 16 + lx;
+                    if (blocks[flat] != 0)
+                        return Math.Clamp(y + 1, 1, 127);
+                }
+            }
+
+            var sections = level.Get<NbtList>("Sections") ?? level.Get<NbtList>("sections");
+            if (sections != null)
+            {
+                int maxY = -1;
+                foreach (NbtTag tag in sections)
+                {
+                    if (tag is not NbtCompound sec)
+                        continue;
+
+                    int secY = sec.Get<NbtByte>("Y")?.Value ?? -1;
+                    if (secY < 0 || secY > 7)
+                        continue;
+
+                    var secBlocks = sec.Get<NbtByteArray>("Blocks")?.Value;
+                    if (secBlocks == null || secBlocks.Length < 4096)
+                        continue;
+
+                    for (int y = 15; y >= 0; y--)
+                    {
+                        int i = lx + lz * 16 + y * 256;
+                        if (secBlocks[i] != 0)
+                        {
+                            int gy = secY * 16 + y;
+                            if (gy > maxY)
+                                maxY = gy;
+                            break;
+                        }
+                    }
+                }
+
+                if (maxY >= 0)
+                    return Math.Clamp(maxY + 1, 1, 127);
+            }
+
+            return Math.Clamp(sourceSpawnY, 1, 127);
+        }
+        catch
+        {
+            return Math.Clamp(sourceSpawnY, 1, 127);
+        }
     }
 
     /// <summary>
@@ -347,7 +451,7 @@ class Program
                 try
                 {
                     lceChunkData = ChunkConverter.ConvertChunk(chunkNbt, lcx, lcz);
-                    lceChunkData = NormalizeChunkCoordinates(lceChunkData, lcx, lcz);
+                    lceChunkData = CanonicalizeChunkNbt(lceChunkData, lcx, lcz);
                     if (lceChunkData.Length == 0) continue;
                 }
                 catch (Exception ex)
@@ -391,28 +495,88 @@ class Program
         return converted;
     }
 
-    private static byte[] NormalizeChunkCoordinates(byte[] chunkData, int expectedX, int expectedZ)
+    private static byte[] CanonicalizeChunkNbt(byte[] chunkData, int expectedX, int expectedZ)
     {
-        using var ms = new MemoryStream(chunkData);
-        var file = new NbtFile();
-        file.LoadFromStream(ms, NbtCompression.None);
+        try
+        {
+            using var ms = new MemoryStream(chunkData);
+            var file = new NbtFile();
+            file.LoadFromStream(ms, NbtCompression.None);
 
-        var level = file.RootTag.Get<NbtCompound>("Level");
-        if (level == null)
-            return chunkData;
+            NbtCompound root = file.RootTag;
+            NbtCompound? level = root.Get<NbtCompound>("Level");
 
-        var xPos = level.Get<NbtInt>("xPos");
-        var zPos = level.Get<NbtInt>("zPos");
+            if (level == null && root.Contains("Blocks"))
+            {
+                level = (NbtCompound)root.Clone();
+                level.Name = "Level";
+                root = new NbtCompound("") { level };
+                file = new NbtFile(root);
+            }
 
-        if (xPos != null) xPos.Value = expectedX;
-        else level.Add(new NbtInt("xPos", expectedX));
+            if (level == null)
+                return Array.Empty<byte>();
 
-        if (zPos != null) zPos.Value = expectedZ;
-        else level.Add(new NbtInt("zPos", expectedZ));
+            UpsertTag(level, new NbtInt("xPos", expectedX));
+            UpsertTag(level, new NbtInt("zPos", expectedZ));
 
-        using var outMs = new MemoryStream();
-        file.SaveToStream(outMs, NbtCompression.None);
-        return outMs.ToArray();
+            EnsureByteArrayTag(level, "Blocks", ChunkConverter.CHUNK_BLOCKS);
+            EnsureByteArrayTag(level, "Data", ChunkConverter.CHUNK_NIBBLES);
+            EnsureByteArrayTag(level, "SkyLight", ChunkConverter.CHUNK_NIBBLES, fillByte: 0xFF);
+            EnsureByteArrayTag(level, "BlockLight", ChunkConverter.CHUNK_NIBBLES);
+            EnsureByteArrayTag(level, "HeightMap", ChunkConverter.HEIGHTMAP_SIZE);
+            EnsureByteArrayTag(level, "Biomes", ChunkConverter.BIOMES_SIZE, fillByte: 1);
+
+            if (!level.Contains("TerrainPopulatedFlags") && !level.Contains("TerrainPopulated"))
+                UpsertTag(level, new NbtShort("TerrainPopulatedFlags", 2046));
+
+            EnsureListTag(level, "Entities", NbtTagType.Compound);
+            EnsureListTag(level, "TileEntities", NbtTagType.Compound);
+
+            using var outMs = new MemoryStream();
+            file.SaveToStream(outMs, NbtCompression.None);
+            return outMs.ToArray();
+        }
+        catch
+        {
+            // Skip malformed chunk payloads rather than writing crash-prone data.
+            return Array.Empty<byte>();
+        }
+    }
+
+    private static void EnsureByteArrayTag(NbtCompound level, string name, int requiredLength, byte fillByte = 0)
+    {
+        byte[]? data = level.Get<NbtByteArray>(name)?.Value;
+        if (data != null && data.Length == requiredLength)
+            return;
+
+        var corrected = new byte[requiredLength];
+        if (fillByte != 0)
+            Array.Fill(corrected, fillByte);
+
+        if (data != null)
+            Buffer.BlockCopy(data, 0, corrected, 0, Math.Min(data.Length, requiredLength));
+
+        UpsertTag(level, new NbtByteArray(name, corrected));
+    }
+
+    private static void EnsureListTag(NbtCompound level, string name, NbtTagType listType)
+    {
+        if (level[name] is NbtList list && list.ListType == listType)
+            return;
+
+        UpsertTag(level, new NbtList(name, listType));
+    }
+
+    private static void UpsertTag(NbtCompound compound, NbtTag tag)
+    {
+        string? name = tag.Name;
+        if (string.IsNullOrEmpty(name))
+            return;
+
+        if (compound.Contains(name))
+            compound.Remove(name);
+        compound.Add(tag);
     }
 
     static void InspectSaveFile(string path)

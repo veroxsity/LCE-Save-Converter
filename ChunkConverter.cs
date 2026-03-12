@@ -121,6 +121,7 @@ public static class ChunkConverter
             ? CloneListOrEmpty(sourceLevel, "TileEntities", "block_entities")
             : new NbtList("TileEntities", NbtTagType.Compound);
         tileEntities.Name = "TileEntities";
+        RemoveUnsupportedTileEntities(tileEntities);
         if (PreserveDynamicChunkData)
         {
             SanitizeLegacyItemStacks(tileEntities);
@@ -517,6 +518,63 @@ public static class ChunkConverter
     {
         block = default;
 
+        if (name == "ladder")
+        {
+            byte data = MapLadderFacing(GetProperty(properties, "facing"));
+            block = new LegacyBlockState(65, data);
+            return true;
+        }
+
+        if (name == "vine")
+        {
+            byte data = MapVineFaces(properties);
+            block = new LegacyBlockState(106, data);
+            return true;
+        }
+
+        if (name == "lever")
+        {
+            byte data = MapLeverData(GetProperty(properties, "face"), GetProperty(properties, "facing"));
+            if (GetBoolProperty(properties, "powered"))
+                data |= 8;
+            block = new LegacyBlockState(69, data);
+            return true;
+        }
+
+        if (name.EndsWith("_button", StringComparison.Ordinal))
+        {
+            byte id = IsWoodFamilyName(name) ? (byte)143 : (byte)77;
+            byte data = MapButtonFacing(GetProperty(properties, "facing"));
+            if (GetBoolProperty(properties, "powered"))
+                data |= 8;
+            block = new LegacyBlockState(id, data);
+            return true;
+        }
+
+        if (name.EndsWith("_fence_gate", StringComparison.Ordinal))
+        {
+            byte data = MapFenceGateFacing(GetProperty(properties, "facing"));
+            if (GetBoolProperty(properties, "open"))
+                data |= 4;
+            block = new LegacyBlockState(107, data);
+            return true;
+        }
+
+        if (name.EndsWith("_pressure_plate", StringComparison.Ordinal))
+        {
+            byte id = name switch
+            {
+                "light_weighted_pressure_plate" => (byte)147,
+                "heavy_weighted_pressure_plate" => (byte)148,
+                _ when IsWoodFamilyName(name) => (byte)72,
+                _ => (byte)70,
+            };
+
+            bool powered = GetBoolProperty(properties, "powered") || GetIntProperty(properties, "power", 0) > 0;
+            block = new LegacyBlockState(id, (byte)(powered ? 1 : 0));
+            return true;
+        }
+
         // Doors require upper/lower metadata to behave correctly.
         if (name.EndsWith("_door", StringComparison.Ordinal) || name == "iron_door")
         {
@@ -716,6 +774,67 @@ public static class ChunkConverter
             "south" => 2, // StairTile::DIR_SOUTH
             "north" => 3, // StairTile::DIR_NORTH
             _ => 0,
+        };
+    }
+
+    private static byte MapLadderFacing(string facing)
+    {
+        return facing switch
+        {
+            "north" => 2,
+            "south" => 3,
+            "west" => 4,
+            "east" => 5,
+            _ => 2,
+        };
+    }
+
+    private static byte MapButtonFacing(string facing)
+    {
+        // ButtonTile_SPU::updateShape uses dir 1..4 for wall buttons.
+        return facing switch
+        {
+            "east" => 1,
+            "west" => 2,
+            "south" => 3,
+            "north" => 4,
+            _ => 1,
+        };
+    }
+
+    private static byte MapFenceGateFacing(string facing)
+    {
+        // Direction_SPU constants: SOUTH=0, WEST=1, NORTH=2, EAST=3.
+        return facing switch
+        {
+            "south" => 0,
+            "west" => 1,
+            "north" => 2,
+            "east" => 3,
+            _ => 0,
+        };
+    }
+
+    private static byte MapVineFaces(NbtCompound? properties)
+    {
+        byte data = 0;
+        // VineTile_SPU flags are 1<<Direction where SOUTH=0, WEST=1, NORTH=2, EAST=3.
+        if (GetBoolProperty(properties, "south")) data |= 1;
+        if (GetBoolProperty(properties, "west")) data |= 2;
+        if (GetBoolProperty(properties, "north")) data |= 4;
+        if (GetBoolProperty(properties, "east")) data |= 8;
+        return data;
+    }
+
+    private static byte MapLeverData(string face, string facing)
+    {
+        // Legacy lever data (low 3 bits) from TU19 renderer:
+        // wall: 1..4, floor: 5/6, ceiling: 0/7. Bit 3 (value 8) is powered.
+        return face switch
+        {
+            "floor" => (byte)((facing == "east" || facing == "west") ? 6 : 5),
+            "ceiling" => (byte)((facing == "east" || facing == "west") ? 7 : 0),
+            _ => MapButtonFacing(facing),
         };
     }
 
@@ -1179,13 +1298,15 @@ public static class ChunkConverter
 
         if (name.EndsWith("_wall_sign", StringComparison.Ordinal))
         {
-            block = new LegacyBlockState(68, 0);
+            byte data = MapWallSignFacing(GetProperty(properties, "facing"));
+            block = new LegacyBlockState(68, data);
             return true;
         }
 
         if (name.EndsWith("_sign", StringComparison.Ordinal))
         {
-            block = new LegacyBlockState(63, 0);
+            byte data = MapStandingSignRotation(GetIntProperty(properties, "rotation", 0));
+            block = new LegacyBlockState(63, data);
             return true;
         }
 
@@ -1327,6 +1448,22 @@ public static class ChunkConverter
         }
     }
 
+    private static void RemoveUnsupportedTileEntities(NbtList tileEntities)
+    {
+        for (int i = tileEntities.Count - 1; i >= 0; i--)
+        {
+            if (tileEntities[i] is not NbtCompound tileEntity)
+            {
+                tileEntities.RemoveAt(i);
+                continue;
+            }
+
+            string id = tileEntity.Get<NbtString>("id")?.Value ?? string.Empty;
+            if (id is "Control" or "minecraft:command_block" or "CommandBlock")
+                tileEntities.RemoveAt(i);
+        }
+    }
+
     private static bool IsItemEntity(NbtCompound entity)
     {
         string id = entity.Get<NbtString>("id")?.Value ?? string.Empty;
@@ -1453,6 +1590,23 @@ public static class ChunkConverter
         };
     }
 
+    private static byte MapWallSignFacing(string facing)
+    {
+        return facing switch
+        {
+            "north" => 2,
+            "south" => 3,
+            "west" => 4,
+            "east" => 5,
+            _ => 2,
+        };
+    }
+
+    private static byte MapStandingSignRotation(int rotation)
+    {
+        return (byte)(rotation & 0x0F);
+    }
+
     private static string GetProperty(NbtCompound? properties, string name)
     {
         return properties?.Get<NbtString>(name)?.Value ?? string.Empty;
@@ -1561,6 +1715,9 @@ public static class ChunkConverter
         for (int i = 0; i < blocks.Length; i++)
         {
             byte id = blocks[i];
+            if (id == 137)
+                id = 1;
+
             if (id >= 165 && BlockRemapTable.TryGetValue(id, out byte replacement))
                 id = replacement;
 
@@ -1680,7 +1837,7 @@ public static class ChunkConverter
         ["spruce_stairs"] = new LegacyBlockState(134, 0),
         ["birch_stairs"] = new LegacyBlockState(135, 0),
         ["jungle_stairs"] = new LegacyBlockState(136, 0),
-        ["command_block"] = new LegacyBlockState(137, 0),
+        ["command_block"] = new LegacyBlockState(1, 0),
         ["beacon"] = new LegacyBlockState(138, 0),
         ["cobblestone_wall"] = new LegacyBlockState(139, 0),
         ["flower_pot"] = new LegacyBlockState(140, 0),
@@ -1756,8 +1913,8 @@ public static class ChunkConverter
         { 207, 0   },  // Beetroots         → Air
         { 208, 2   },  // Grass Path        → Grass
         { 209, 0   },  // End Gateway       → Air
-        { 210, 137 },  // Repeating Command Block → Command Block
-        { 211, 137 },  // Chain Command Block → Command Block
+        { 210, 1   },  // Repeating Command Block → Stone
+        { 211, 1   },  // Chain Command Block → Stone
         { 212, 79  },  // Frosted Ice       → Ice
 
         // Java 1.10 additions
