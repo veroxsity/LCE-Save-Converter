@@ -13,6 +13,10 @@ public static class ChunkConverter
     public const int HEIGHTMAP_SIZE = 256;
     public const int BIOMES_SIZE = 256;
 
+    // Modern (1.13+) worlds can have sections above LCE's 0..127 range.
+    // Use one shift value for the whole conversion run to keep chunk heights consistent.
+    private static int? _globalModernSectionShift;
+
     public static byte[] ConvertChunk(NbtCompound rootTag, int newChunkX, int newChunkZ)
     {
         bool hasLegacyLevelWrapper = rootTag.Get<NbtCompound>("Level") != null;
@@ -31,7 +35,7 @@ public static class ChunkConverter
         byte[] blockLight;
         if (isAnvil)
         {
-            FlattenAnvilSections(sourceLevel, out blocks, out data, out skyLight, out blockLight);
+            FlattenAnvilSections(sourceLevel, isModernChunkLayout, out blocks, out data, out skyLight, out blockLight);
         }
         else
         {
@@ -132,6 +136,7 @@ public static class ChunkConverter
 
     private static void FlattenAnvilSections(
         NbtCompound level,
+        bool isModernChunkLayout,
         out byte[] blocks,
         out byte[] data,
         out byte[] skyLight,
@@ -171,14 +176,22 @@ public static class ChunkConverter
 
         if (decodedSections.Count == 0) return;
 
-        // Choose the densest section as anchor and map it near y=64 (section 4).
-        // This keeps high modern builds from being entirely clipped above LCE's 0..127 range.
-        int anchorSectionY = decodedSections
-            .OrderByDescending(s => s.NonAirCount)
-            .ThenBy(s => Math.Abs(s.SectionY - 4))
-            .First()
-            .SectionY;
-        int sectionShift = anchorSectionY - 4;
+        int sectionShift = 0;
+        if (isModernChunkLayout)
+        {
+            // Pick the modern shift once so adjacent chunks don't end up at different elevations.
+            if (_globalModernSectionShift == null)
+            {
+                int anchorSectionY = decodedSections
+                    .OrderByDescending(s => s.NonAirCount)
+                    .ThenBy(s => Math.Abs(s.SectionY - 4))
+                    .First()
+                    .SectionY;
+                _globalModernSectionShift = anchorSectionY - 4;
+            }
+
+            sectionShift = _globalModernSectionShift.Value;
+        }
 
         foreach (var section in decodedSections)
         {
