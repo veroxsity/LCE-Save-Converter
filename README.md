@@ -27,6 +27,36 @@ Java Edition 1.6.4 and LCE TU19 are built on the same codebase — both use the 
 
 ---
 
+## Current 1.13+ Compatibility
+
+Recent updates improved modern-world conversion fidelity (especially for large adventure/build worlds):
+
+- Directional blockstate handling for doors, stairs, and trapdoors
+- Flattened color block mapping (`<color>_wool`, glass, panes, carpet, terracotta, concrete)
+- Deepslate-era fallback mappings to closest TU19 blocks
+- Fluid `level` mapping for source vs flowing water/lava
+- Slab `type` handling (`bottom`, `top`, `double`) for wood and stone slab families
+- Sandstone and red-sandstone slab variants mapped to legacy sandstone slab families
+- Redstone lamp state mapping (`lit=true/false`) to lit/unlit legacy lamps
+
+For best results, always reconvert from the original Java world after updating this tool.
+
+---
+
+## Known Mismatches (Expected Fallbacks)
+
+| Modern Java Block Family | LCE TU19 Output | Why |
+|---|---|---|
+| `red_sandstone*` (block/stairs/slabs) | Sandstone family (`24`/`128`/`44`/`43`) | Red sandstone does not exist in TU19 |
+| Deepslate blocks (`deepslate*`) | Stone/cobblestone/stone-brick families | Deepslate does not exist in TU19 |
+| Prismarine variants | Stone/Quartz-like fallbacks | Prismarine content is newer than TU19 |
+| Purpur variants | Quartz-like fallbacks | Purpur does not exist in TU19 |
+| Modern coral/kelp/observer/end-rod/etc. | Air or nearest legacy replacement | No compatible TU19 tile/entity behavior |
+
+If a world depends on exact modern block identity, visual parity may differ in those areas.
+
+---
+
 ## Output
 
 A valid `saveData.ms` file targeting the **Windows64 PC platform** (little-endian, save version 7).
@@ -114,5 +144,6 @@ Key source files used:
 
 - Player inventory positions are not remapped for world recentring
 - Nether portal linkages will need re-establishing in-game after conversion
-- Java 1.13+ conversion requires a complete block ID mapping table (work in progress)
-- LCE world height is 128 blocks — blocks above Y=127 from 1.8+ worlds are dropped
+- Not every post-1.6.4 Java block has an exact TU19 equivalent; some modern blocks are downgraded to the closest visual/behavioral fallback
+- Some complex modern blockstates can still require additional mapping passes for perfect parity in edge-case builds
+- LCE world height is 128 blocks; source blocks above Y=127 are dropped or remapped during conversion
