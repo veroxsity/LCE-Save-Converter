@@ -137,23 +137,41 @@ public class SaveDataContainer
 
     /// <summary>
     /// Writes the complete saveData.ms file to disk.
-    /// This finalises the header/footer and writes the whole blob.
+    /// The on-disk format wraps the in-memory blob in a compression envelope:
+    ///   [4 bytes] int = 0 (signals compressed data)
+    ///   [4 bytes] decompressed size (little-endian)
+    ///   [variable] zlib-compressed blob
+    /// Based on ConsoleSaveFileOriginal::Flush() from the LCE source.
     /// </summary>
     public void Save(string outputPath)
     {
-        // Write header at the start
+        // Write header at the start of the in-memory blob
         WriteHeader();
 
-        // Calculate total size = data + footer
+        // Calculate total in-memory size = data + footer
         int totalSize = _dataEnd + (_entries.Count * FILE_ENTRY_SIZE);
         EnsureCapacity(totalSize);
 
         // Write footer (file table) at _dataEnd
         WriteFooter();
 
-        // Write to disk
+        // Compress the entire blob with zlib (WIN64 format)
+        byte[] rawBlob = new byte[totalSize];
+        Buffer.BlockCopy(_blob, 0, rawBlob, 0, totalSize);
+
+        using var compressedStream = new MemoryStream();
+        using (var zlibStream = new System.IO.Compression.ZLibStream(
+            compressedStream, System.IO.Compression.CompressionLevel.Optimal, leaveOpen: true))
+        {
+            zlibStream.Write(rawBlob, 0, totalSize);
+        }
+        byte[] compressedData = compressedStream.ToArray();
+
+        // Write the on-disk format: [0 int][decompSize int][compressed data]
         using var fs = new FileStream(outputPath, FileMode.Create, FileAccess.Write);
-        fs.Write(_blob, 0, totalSize);
+        fs.Write(BitConverter.GetBytes((int)0));            // compressed flag
+        fs.Write(BitConverter.GetBytes((int)totalSize));    // decompressed size
+        fs.Write(compressedData);                           // zlib compressed blob
     }
 
     private void WriteHeader()
