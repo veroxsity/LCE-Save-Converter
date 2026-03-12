@@ -24,19 +24,28 @@ class Program
         Console.WriteLine("=== LCE World Converter ===");
         Console.WriteLine("Converts Java Edition worlds to Minecraft Legacy Console Edition (WIN64) format.\n");
 
-        if (args.Length < 2)
+        if (args.Length < 1)
         {
-            Console.WriteLine("Usage: LceWorldConverter <java_world_path> <output_savedata.ms> [--large-world]");
+            Console.WriteLine("Usage: LceWorldConverter <java_world_path> [output_dir] [--large-world]");
             Console.WriteLine();
-            Console.WriteLine("  java_world_path    Path to Java Edition world folder (containing level.dat)");
-            Console.WriteLine("  output_savedata.ms Path for the output LCE save file");
-            Console.WriteLine("  --large-world      Use 320-chunk (5120 block) world size instead of 54-chunk (864 block)");
+            Console.WriteLine("  java_world_path  Path to Java Edition world folder (containing level.dat)");
+            Console.WriteLine("  output_dir       Optional: directory to write saveData.ms into.");
+            Console.WriteLine("                   Defaults to a folder named after the world in the current directory.");
+            Console.WriteLine("  --large-world    Use 320-chunk (5120 block) world size instead of 54-chunk (864 block)");
             return;
         }
 
         string javaWorldPath = args[0];
-        string outputPath = args[1];
-        bool largeWorld = args.Length > 2 && args[2] == "--large-world";
+
+        // Determine output directory and path
+        // If next arg is provided and isn't a flag, treat it as the output directory
+        string? outputDirArg = args.Length > 1 && !args[1].StartsWith("--") ? args[1] : null;
+        bool largeWorld = args.Contains("--large-world");
+
+        string worldName = Path.GetFileName(javaWorldPath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+        string outputDir = outputDirArg ?? Path.Combine(Directory.GetCurrentDirectory(), worldName);
+        Directory.CreateDirectory(outputDir);
+        string outputPath = Path.Combine(outputDir, "saveData.ms");
 
         if (!Directory.Exists(javaWorldPath))
         {
