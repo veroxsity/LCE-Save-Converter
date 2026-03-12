@@ -105,6 +105,8 @@ public static class ChunkConverter
         var entities = isModernChunkLayout
             ? new NbtList("Entities", NbtTagType.Compound)
             : (NbtList)CloneOrEmptyList(sourceLevel, "Entities");
+        SanitizeEntities(entities);
+        SanitizeLegacyItemStacks(entities);
         RemapEntityPositions(entities, blockOffsetX, blockOffsetZ);
         level.Add(entities);
 
@@ -112,6 +114,7 @@ public static class ChunkConverter
             ? new NbtList("TileEntities", NbtTagType.Compound)
             : CloneListOrEmpty(sourceLevel, "TileEntities", "block_entities");
         tileEntities.Name = "TileEntities";
+        SanitizeLegacyItemStacks(tileEntities);
         RemapTileEntityPositions(tileEntities, blockOffsetX, blockOffsetZ);
         level.Add(tileEntities);
 
@@ -1258,6 +1261,159 @@ public static class ChunkConverter
         }
 
         return false;
+    }
+
+    private static void SanitizeLegacyItemStacks(NbtTag tag)
+    {
+        if (tag is NbtList list)
+        {
+            foreach (NbtTag child in list)
+                SanitizeLegacyItemStacks(child);
+            return;
+        }
+
+        if (tag is not NbtCompound compound)
+            return;
+
+        if (LooksLikeItemStack(compound))
+            NormalizeOrClearItemStack(compound);
+
+        foreach (NbtTag child in compound)
+            SanitizeLegacyItemStacks(child);
+    }
+
+    private static void SanitizeEntities(NbtList entities)
+    {
+        for (int i = entities.Count - 1; i >= 0; i--)
+        {
+            if (entities[i] is not NbtCompound entity)
+            {
+                entities.RemoveAt(i);
+                continue;
+            }
+
+            if (!IsItemEntity(entity))
+                continue;
+
+            NbtCompound? item = entity.Get<NbtCompound>("Item") ?? entity.Get<NbtCompound>("item");
+            if (item == null)
+            {
+                // Item entities without an Item payload are known to crash TU19 loaders.
+                entities.RemoveAt(i);
+                continue;
+            }
+
+            item.Name = "Item";
+            SetCompoundTag(entity, item);
+            if (entity.Contains("item"))
+                entity.Remove("item");
+
+            NormalizeOrClearItemStack(item);
+
+            short itemId = item.Get<NbtShort>("id")?.Value ?? 0;
+            int count = item.Get<NbtByte>("Count")?.Value ?? 0;
+            if (itemId <= 0 || count <= 0)
+                entities.RemoveAt(i);
+        }
+    }
+
+    private static bool IsItemEntity(NbtCompound entity)
+    {
+        string id = entity.Get<NbtString>("id")?.Value ?? string.Empty;
+        return id is "Item" or "item" or "minecraft:item";
+    }
+
+    private static bool LooksLikeItemStack(NbtCompound compound)
+    {
+        return compound.Contains("id") &&
+               (compound.Contains("Count") || compound.Contains("Slot") || compound.Contains("Damage"));
+    }
+
+    private static void NormalizeOrClearItemStack(NbtCompound stack)
+    {
+        int id;
+        if (!TryReadLegacyItemId(stack, out id) || id < 0 || id > 31999)
+        {
+            SetCompoundTag(stack, new NbtShort("id", 0));
+            SetCompoundTag(stack, new NbtByte("Count", 0));
+            SetCompoundTag(stack, new NbtShort("Damage", 0));
+            return;
+        }
+
+        SetCompoundTag(stack, new NbtShort("id", (short)Math.Clamp(id, 0, short.MaxValue)));
+
+        int count = stack.Get<NbtByte>("Count")?.Value ?? 1;
+        SetCompoundTag(stack, new NbtByte("Count", (byte)Math.Clamp(count, 0, 64)));
+
+        short damage = stack.Get<NbtShort>("Damage")?.Value
+            ?? (short)Math.Clamp(stack.Get<NbtInt>("Damage")?.Value ?? 0, short.MinValue, short.MaxValue);
+        SetCompoundTag(stack, new NbtShort("Damage", damage));
+    }
+
+    private static bool TryReadLegacyItemId(NbtCompound stack, out int id)
+    {
+        id = 0;
+
+        if (!stack.Contains("id"))
+            return false;
+
+        NbtTag idTag = stack["id"]!;
+        switch (idTag)
+        {
+            case NbtByte b:
+                id = b.Value;
+                return true;
+            case NbtShort s:
+                id = s.Value;
+                return true;
+            case NbtInt i:
+                id = i.Value;
+                return true;
+            case NbtString str:
+                return TryMapModernItemNameToLegacyId(str.Value, out id);
+            default:
+                return false;
+        }
+    }
+
+    private static bool TryMapModernItemNameToLegacyId(string name, out int id)
+    {
+        id = 0;
+        if (string.IsNullOrWhiteSpace(name))
+            return false;
+
+        if (name.StartsWith("minecraft:", StringComparison.Ordinal))
+            name = name[10..];
+
+        return name switch
+        {
+            "air" => true,
+            "stone" => (id = 1) == 1,
+            "grass" => (id = 2) == 2,
+            "dirt" => (id = 3) == 3,
+            "cobblestone" => (id = 4) == 4,
+            "planks" => (id = 5) == 5,
+            "sand" => (id = 12) == 12,
+            "gravel" => (id = 13) == 13,
+            "coal" => (id = 263) == 263,
+            "iron_ingot" => (id = 265) == 265,
+            "gold_ingot" => (id = 266) == 266,
+            "diamond" => (id = 264) == 264,
+            "stick" => (id = 280) == 280,
+            "torch" => (id = 50) == 50,
+            _ => false,
+        };
+    }
+
+    private static void SetCompoundTag(NbtCompound compound, NbtTag tag)
+    {
+        string? tagName = tag.Name;
+        if (string.IsNullOrEmpty(tagName))
+            return;
+
+        if (compound.Contains(tagName))
+            compound.Remove(tagName);
+        compound.Add(tag);
     }
 
     private static bool IsWoodFamilyName(string name)
