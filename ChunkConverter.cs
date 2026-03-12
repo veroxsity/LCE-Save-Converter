@@ -16,7 +16,11 @@ public static class ChunkConverter
     public static byte[] ConvertChunk(NbtCompound rootTag, int newChunkX, int newChunkZ)
     {
         bool hasLegacyLevelWrapper = rootTag.Get<NbtCompound>("Level") != null;
-        bool isModernChunkLayout = !hasLegacyLevelWrapper;
+        int dataVersion = rootTag.Get<NbtInt>("DataVersion")?.Value
+            ?? rootTag.Get<NbtCompound>("Level")?.Get<NbtInt>("DataVersion")?.Value
+            ?? 0;
+        // 1.13+ worlds use modern block/entity schemas even when some chunks still have a Level wrapper.
+        bool isModernChunkLayout = !hasLegacyLevelWrapper || dataVersion >= 1519;
         var sourceLevel = rootTag.Get<NbtCompound>("Level") ?? rootTag;
 
         bool isAnvil = sourceLevel.Contains("Sections") || sourceLevel.Contains("sections");
@@ -39,6 +43,12 @@ public static class ChunkConverter
 
         byte[] heightMap = GetByteArrayOrDefault(sourceLevel, "HeightMap", HEIGHTMAP_SIZE);
         byte[] biomes = GetByteArrayOrDefault(sourceLevel, "Biomes", BIOMES_SIZE);
+
+        if (isModernChunkLayout)
+        {
+            // Modern biome IDs can be out-of-range for TU19. Use a safe default biome.
+            Array.Fill(biomes, (byte)1); // Plains
+        }
 
         RemapBlocks(blocks, data);
 
