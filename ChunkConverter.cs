@@ -402,6 +402,9 @@ public static class ChunkConverter
         if (TryMapFluidBlock(name, properties, out var fluid))
             return fluid;
 
+        if (TryMapSlabBlock(name, properties, out var slab))
+            return slab;
+
         if (TryMapDirectionalBlock(name, properties, out var directional))
             return directional;
 
@@ -495,6 +498,75 @@ public static class ChunkConverter
         }
 
         return false;
+    }
+
+    private static bool TryMapSlabBlock(string name, NbtCompound? properties, out LegacyBlockState block)
+    {
+        block = default;
+
+        string slabType = GetProperty(properties, "type");
+        bool isTop = slabType == "top";
+        bool isDouble = slabType == "double";
+
+        // Modern wood slabs (oak/spruce/birch/jungle/acacia/dark_oak)
+        if (name.EndsWith("_slab", StringComparison.Ordinal) &&
+            TryGetWoodSlabVariant(name, out byte woodVariant))
+        {
+            if (isDouble)
+            {
+                block = new LegacyBlockState(125, woodVariant); // double wood slab
+                return true;
+            }
+
+            byte data = (byte)(woodVariant | (isTop ? 8 : 0));
+            block = new LegacyBlockState(126, data); // wood slab half
+            return true;
+        }
+
+        // Sandstone-family slabs in modern versions are split into distinct names.
+        if (name is "sandstone_slab" or "smooth_sandstone_slab" or "cut_sandstone_slab")
+        {
+            if (isDouble)
+            {
+                block = new LegacyBlockState(43, 1); // double sandstone slab
+                return true;
+            }
+
+            byte data = (byte)(1 | (isTop ? 8 : 0));
+            block = new LegacyBlockState(44, data); // sandstone slab
+            return true;
+        }
+
+        if (name is "red_sandstone_slab" or "smooth_red_sandstone_slab" or "cut_red_sandstone_slab")
+        {
+            // Closest legacy fallback: sandstone slab.
+            if (isDouble)
+            {
+                block = new LegacyBlockState(43, 1);
+                return true;
+            }
+
+            byte data = (byte)(1 | (isTop ? 8 : 0));
+            block = new LegacyBlockState(44, data);
+            return true;
+        }
+
+        return false;
+    }
+
+    private static bool TryGetWoodSlabVariant(string name, out byte variant)
+    {
+        variant = 0;
+        return name switch
+        {
+            "oak_slab" => true,
+            "spruce_slab" => (variant = 1) == 1,
+            "birch_slab" => (variant = 2) == 2,
+            "jungle_slab" => (variant = 3) == 3,
+            "acacia_slab" => (variant = 4) == 4,
+            "dark_oak_slab" => (variant = 5) == 5,
+            _ => false,
+        };
     }
 
     private static bool TryGetStairsId(string name, out byte id)
@@ -852,6 +924,18 @@ public static class ChunkConverter
                 block = new LegacyBlockState(12, 1);
                 return true;
             case "red_sandstone":
+                block = new LegacyBlockState(24, 0);
+                return true;
+            case "smooth_sandstone":
+                block = new LegacyBlockState(24, 2);
+                return true;
+            case "chiseled_sandstone":
+            case "cut_sandstone":
+                block = new LegacyBlockState(24, 1);
+                return true;
+            case "smooth_red_sandstone":
+            case "chiseled_red_sandstone":
+            case "cut_red_sandstone":
                 block = new LegacyBlockState(24, 0);
                 return true;
             case "red_sandstone_stairs":
