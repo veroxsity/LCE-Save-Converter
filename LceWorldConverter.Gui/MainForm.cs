@@ -1,5 +1,4 @@
 using System.Drawing;
-using System.Drawing.Drawing2D;
 using System.Windows.Forms;
 using LceWorldConverter;
 
@@ -7,300 +6,281 @@ namespace LceWorldConverter.Gui;
 
 internal sealed class MainForm : Form
 {
-    private static readonly Color WindowTop = Color.FromArgb(241, 247, 245);
-    private static readonly Color WindowBottom = Color.FromArgb(225, 238, 233);
-    private static readonly Color CardBg = Color.FromArgb(250, 252, 251);
-    private static readonly Color Border = Color.FromArgb(194, 215, 206);
     private static readonly Color Accent = Color.FromArgb(17, 119, 92);
     private static readonly Color AccentHover = Color.FromArgb(22, 137, 106);
     private static readonly Color HeroText = Color.FromArgb(24, 56, 47);
-    private static readonly Color MutedText = Color.FromArgb(80, 98, 91);
 
-    private readonly TextBox _zipPathTextBox;
-    private readonly TextBox _outputPathTextBox;
-    private readonly ComboBox _worldTypeComboBox;
-    private readonly CheckBox _allDimensionsCheckBox;
-    private readonly CheckBox _copyPlayersCheckBox;
-    private readonly CheckBox _preserveEntitiesCheckBox;
-    private readonly Button _convertButton;
+    private readonly TextBox _javaInputTextBox;
+    private readonly TextBox _javaOutputTextBox;
+    private readonly ComboBox _javaWorldTypeComboBox;
+    private readonly CheckBox _javaAllDimensionsCheckBox;
+    private readonly CheckBox _javaCopyPlayersCheckBox;
+    private readonly CheckBox _javaPreserveEntitiesCheckBox;
+    private readonly Button _javaConvertButton;
+
+    private readonly TextBox _lceInputTextBox;
+    private readonly TextBox _lceOutputTextBox;
+    private readonly CheckBox _lceAllDimensionsCheckBox;
+    private readonly CheckBox _lceCopyPlayersCheckBox;
+    private readonly Button _lceConvertButton;
+
     private readonly TextBox _logTextBox;
-    private readonly ProgressBar _progressBar;
     private readonly Label _statusLabel;
 
     public MainForm()
     {
         Text = "LCE World Converter";
         StartPosition = FormStartPosition.CenterScreen;
-        MinimumSize = new Size(880, 660);
-        Size = new Size(980, 740);
+        MinimumSize = new Size(800, 600);
+        Size = new Size(800, 600);
         Font = new Font("Bahnschrift", 10F);
-        DoubleBuffered = true;
-        BackColor = WindowTop;
-        SetStyle(ControlStyles.OptimizedDoubleBuffer | ControlStyles.AllPaintingInWmPaint | ControlStyles.ResizeRedraw, true);
 
         var shell = new TableLayoutPanel
         {
             Dock = DockStyle.Fill,
             ColumnCount = 1,
-            RowCount = 5,
-            Padding = new Padding(26, 20, 26, 20),
-            BackColor = WindowTop,
+            RowCount = 3,
+            Padding = new Padding(16),
         };
         shell.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-        shell.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-        shell.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-        shell.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-        shell.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+        shell.RowStyles.Add(new RowStyle(SizeType.Percent, 60));
+        shell.RowStyles.Add(new RowStyle(SizeType.Percent, 40));
 
-        shell.Controls.Add(CreateHeroCard());
+        shell.Controls.Add(CreateHeader(), 0, 0);
 
-        _zipPathTextBox = CreatePathTextBox();
-        _outputPathTextBox = CreatePathTextBox();
-        shell.Controls.Add(CreateInputCard());
-
-        _worldTypeComboBox = CreateWorldTypeComboBox();
-        _allDimensionsCheckBox = CreateOptionCheckBox("Convert Nether and End");
-        _copyPlayersCheckBox = CreateOptionCheckBox("Copy numeric player data");
-        _preserveEntitiesCheckBox = CreateOptionCheckBox("Preserve entities and tile data");
-        shell.Controls.Add(CreateOptionsCard());
-
-        _convertButton = CreatePrimaryButton("Convert");
-        _convertButton.Click += ConvertClicked;
-
-        _progressBar = new ProgressBar
+        var tabs = new TabControl
         {
             Dock = DockStyle.Fill,
-            Height = 20,
-            Style = ProgressBarStyle.Blocks,
-            Margin = new Padding(0, 4, 0, 0),
+            Padding = new Point(18, 8),
         };
+
+        _javaInputTextBox = CreatePathTextBox();
+        _javaOutputTextBox = CreatePathTextBox();
+        _javaWorldTypeComboBox = CreateWorldTypeComboBox();
+        _javaAllDimensionsCheckBox = CreateCheckBox("Convert Nether and End");
+        _javaCopyPlayersCheckBox = CreateCheckBox("Copy numeric player data");
+        _javaPreserveEntitiesCheckBox = CreateCheckBox("Preserve entities and tile data");
+        _javaConvertButton = CreatePrimaryButton("Convert To LCE");
+        _javaConvertButton.Click += ConvertJavaToLceClicked;
+
+        _lceInputTextBox = CreatePathTextBox();
+        _lceOutputTextBox = CreatePathTextBox();
+        _lceAllDimensionsCheckBox = CreateCheckBox("Export Nether and End");
+        _lceCopyPlayersCheckBox = CreateCheckBox("Export players/*.dat");
+        _lceConvertButton = CreatePrimaryButton("Convert To Java");
+        _lceConvertButton.Click += ConvertLceToJavaClicked;
+
+        tabs.TabPages.Add(CreateJavaToLceTab());
+        tabs.TabPages.Add(CreateLceToJavaTab());
+        shell.Controls.Add(tabs, 0, 1);
 
         _statusLabel = new Label
         {
-            AutoSize = true,
+            Dock = DockStyle.Top,
+            AutoSize = false,
+            Height = 24,
             Text = "Ready",
             ForeColor = HeroText,
-            Font = new Font(Font.FontFamily, 9F, FontStyle.Bold),
-            Anchor = AnchorStyles.Left,
-            Margin = new Padding(12, 6, 0, 0),
+            Font = new Font("Bahnschrift", 10F, FontStyle.Bold),
+            Padding = new Padding(4, 2, 0, 0),
         };
-
-        shell.Controls.Add(CreateActionCard());
 
         _logTextBox = new TextBox
         {
             Dock = DockStyle.Fill,
             Multiline = true,
-            ReadOnly = true,
             ScrollBars = ScrollBars.Vertical,
-            BorderStyle = BorderStyle.None,
+            ReadOnly = true,
+            Font = new Font("Consolas", 9.5F),
             BackColor = Color.FromArgb(17, 35, 30),
             ForeColor = Color.FromArgb(193, 226, 216),
-            Font = new Font("Consolas", 9.5F),
-            Margin = new Padding(6),
+            BorderStyle = BorderStyle.FixedSingle,
         };
 
-        shell.Controls.Add(CreateLogCard());
+        var logPanel = new TableLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            ColumnCount = 1,
+            RowCount = 2,
+            Padding = new Padding(0, 8, 0, 0),
+        };
+        logPanel.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        logPanel.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+        logPanel.Controls.Add(_statusLabel, 0, 0);
+        logPanel.Controls.Add(_logTextBox, 0, 1);
+
+        shell.Controls.Add(logPanel, 0, 2);
         Controls.Add(shell);
     }
 
-    private Control CreateHeroCard()
+    private Control CreateHeader()
     {
-        var card = CreateCard(new Padding(18, 16, 18, 14));
+        var panel = new Panel
+        {
+            Dock = DockStyle.Top,
+            Height = 76,
+            Padding = new Padding(0, 0, 0, 12),
+        };
 
         var title = new Label
         {
-            AutoSize = true,
             Text = "LCE World Converter",
-            ForeColor = HeroText,
+            Dock = DockStyle.Top,
+            Height = 36,
             Font = new Font("Bahnschrift SemiBold", 22F, FontStyle.Bold),
+            ForeColor = HeroText,
         };
 
         var subtitle = new Label
         {
-            AutoSize = true,
-            MaximumSize = new Size(860, 0),
-            Margin = new Padding(0, 8, 0, 0),
-            Text = "Select a zipped Java world, choose an output folder, and convert to saveData.ms.",
-            ForeColor = MutedText,
+            Text = "Convert in both directions: Java world folder/zip <-> LCE saveData.ms",
+            Dock = DockStyle.Top,
+            Height = 28,
             Font = new Font("Bahnschrift", 10.5F),
+            ForeColor = Color.FromArgb(75, 95, 88),
         };
 
-        var badge = new Label
-        {
-            AutoSize = true,
-            Margin = new Padding(0, 10, 0, 0),
-            Text = "ZIP INPUT • GUI WORKFLOW",
-            ForeColor = Color.White,
-            BackColor = Accent,
-            Padding = new Padding(8, 4, 8, 4),
-            Font = new Font("Bahnschrift", 8.5F, FontStyle.Bold),
-        };
-
-        card.Controls.Add(title);
-        card.Controls.Add(subtitle);
-        card.Controls.Add(badge);
-        return card;
+        panel.Controls.Add(subtitle);
+        panel.Controls.Add(title);
+        return panel;
     }
 
-    private Control CreateInputCard()
+    private TabPage CreateJavaToLceTab()
     {
-        var card = CreateCard();
+        var page = new TabPage("Java -> LCE")
+        {
+            BackColor = Color.White,
+        };
 
         var layout = new TableLayoutPanel
         {
             Dock = DockStyle.Fill,
             ColumnCount = 1,
-            RowCount = 2,
-            AutoSize = true,
-            BackColor = Color.Transparent,
+            RowCount = 4,
+            Padding = new Padding(14),
         };
         layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
 
-        layout.Controls.Add(CreatePathRow("World Zip", _zipPathTextBox, "Explore...", BrowseZip), 0, 0);
-        layout.Controls.Add(CreatePathRow("Output Folder", _outputPathTextBox, "Browse...", BrowseOutputFolder), 0, 1);
+        layout.Controls.Add(CreatePathRow("Java World", _javaInputTextBox, "Browse...", BrowseJavaInput), 0, 0);
+        layout.Controls.Add(CreatePathRow("Output Folder", _javaOutputTextBox, "Browse...", BrowseJavaOutput), 0, 1);
+        layout.Controls.Add(CreateJavaOptionsPanel(), 0, 2);
 
-        card.Controls.Add(layout);
-        return card;
-    }
-
-    private Control CreateOptionsCard()
-    {
-        var card = CreateCard();
-        var panel = new TableLayoutPanel
-        {
-            Dock = DockStyle.Fill,
-            ColumnCount = 2,
-            AutoSize = true,
-            BackColor = CardBg,
-        };
-        panel.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 124));
-        panel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-
-        var worldTypeLabel = new Label
-        {
-            AutoSize = true,
-            Text = "World Type",
-            ForeColor = HeroText,
-            Font = new Font("Bahnschrift", 10F, FontStyle.Bold),
-            Margin = new Padding(0, 8, 12, 0),
-        };
-
-        panel.Controls.Add(worldTypeLabel, 0, 0);
-        panel.Controls.Add(_worldTypeComboBox, 1, 0);
-
-        var checkboxFlow = new FlowLayoutPanel
-        {
-            Dock = DockStyle.Fill,
-            AutoSize = true,
-            FlowDirection = FlowDirection.LeftToRight,
-            WrapContents = true,
-            BackColor = CardBg,
-            Margin = new Padding(0, 10, 0, 0),
-        };
-        checkboxFlow.Controls.Add(_allDimensionsCheckBox);
-        checkboxFlow.Controls.Add(_copyPlayersCheckBox);
-        checkboxFlow.Controls.Add(_preserveEntitiesCheckBox);
-
-        panel.Controls.Add(new Label(), 0, 1);
-        panel.Controls.Add(checkboxFlow, 1, 1);
-
-        card.Controls.Add(panel);
-        return card;
-    }
-
-    private Control CreateActionCard()
-    {
-        var card = CreateCard();
-
-        var panel = new TableLayoutPanel
-        {
-            Dock = DockStyle.Fill,
-            ColumnCount = 3,
-            AutoSize = true,
-            BackColor = CardBg,
-        };
-        panel.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
-        panel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-        panel.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
-
-        panel.Controls.Add(_convertButton, 0, 0);
-        panel.Controls.Add(_progressBar, 1, 0);
-        panel.Controls.Add(_statusLabel, 2, 0);
-
-        card.Controls.Add(panel);
-        return card;
-    }
-
-    private Control CreateLogCard()
-    {
-        var card = CreateCard(new Padding(0), autoSize: false, dock: DockStyle.Fill);
-        card.MinimumSize = new Size(0, 220);
-
-        var header = new Label
+        var actions = new FlowLayoutPanel
         {
             Dock = DockStyle.Top,
-            AutoSize = false,
-            Height = 38,
-            Padding = new Padding(14, 10, 0, 0),
-            Text = "Conversion Activity",
-            ForeColor = HeroText,
-            Font = new Font("Bahnschrift", 10F, FontStyle.Bold),
-            BackColor = Color.FromArgb(233, 242, 238),
+            AutoSize = true,
+            FlowDirection = FlowDirection.LeftToRight,
+            Padding = new Padding(0, 12, 0, 0),
         };
+        actions.Controls.Add(_javaConvertButton);
 
-        var inner = new Panel
+        layout.Controls.Add(actions, 0, 3);
+        page.Controls.Add(layout);
+        return page;
+    }
+
+    private Control CreateJavaOptionsPanel()
+    {
+        var panel = new TableLayoutPanel
+        {
+            Dock = DockStyle.Top,
+            ColumnCount = 2,
+            AutoSize = true,
+            Padding = new Padding(0, 6, 0, 0),
+        };
+        panel.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 140));
+        panel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+
+        panel.Controls.Add(new Label
+        {
+            Text = "World Type",
+            AutoSize = true,
+            Font = new Font("Bahnschrift", 10F, FontStyle.Bold),
+            Margin = new Padding(0, 8, 8, 0),
+        }, 0, 0);
+        panel.Controls.Add(_javaWorldTypeComboBox, 1, 0);
+
+        var checks = new FlowLayoutPanel
         {
             Dock = DockStyle.Fill,
-            Padding = new Padding(10),
-            BackColor = Color.FromArgb(15, 31, 27),
+            AutoSize = true,
+            WrapContents = true,
+            Margin = new Padding(0, 8, 0, 0),
         };
-        inner.Controls.Add(_logTextBox);
+        checks.Controls.Add(_javaAllDimensionsCheckBox);
+        checks.Controls.Add(_javaCopyPlayersCheckBox);
+        checks.Controls.Add(_javaPreserveEntitiesCheckBox);
 
-        card.Controls.Add(inner);
-        card.Controls.Add(header);
-        return card;
+        panel.Controls.Add(new Label(), 0, 1);
+        panel.Controls.Add(checks, 1, 1);
+        return panel;
     }
 
-    private Panel CreateCard(Padding? contentPadding = null, bool autoSize = true, DockStyle dock = DockStyle.Top)
+    private TabPage CreateLceToJavaTab()
     {
-        var card = new Panel
+        var page = new TabPage("LCE -> Java")
         {
-            Dock = dock,
-            AutoSize = autoSize,
-            Margin = new Padding(0, 0, 0, 12),
-            Padding = contentPadding ?? new Padding(16, 14, 16, 14),
-            BackColor = CardBg,
-            BorderStyle = BorderStyle.FixedSingle,
+            BackColor = Color.White,
         };
 
-        return card;
+        var layout = new TableLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            ColumnCount = 1,
+            RowCount = 4,
+            Padding = new Padding(14),
+        };
+        layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+
+        layout.Controls.Add(CreatePathRow("saveData.ms", _lceInputTextBox, "Browse...", BrowseLceInput), 0, 0);
+        layout.Controls.Add(CreatePathRow("Output Folder", _lceOutputTextBox, "Browse...", BrowseLceOutput), 0, 1);
+
+        var checks = new FlowLayoutPanel
+        {
+            Dock = DockStyle.Top,
+            AutoSize = true,
+            Padding = new Padding(140, 12, 0, 0),
+            WrapContents = true,
+        };
+        checks.Controls.Add(_lceAllDimensionsCheckBox);
+        checks.Controls.Add(_lceCopyPlayersCheckBox);
+        layout.Controls.Add(checks, 0, 2);
+
+        var actions = new FlowLayoutPanel
+        {
+            Dock = DockStyle.Top,
+            AutoSize = true,
+            FlowDirection = FlowDirection.LeftToRight,
+            Padding = new Padding(0, 12, 0, 0),
+        };
+        actions.Controls.Add(_lceConvertButton);
+        layout.Controls.Add(actions, 0, 3);
+
+        page.Controls.Add(layout);
+        return page;
     }
 
-    private TextBox CreatePathTextBox()
+    private static TextBox CreatePathTextBox()
     {
         return new TextBox
         {
             Dock = DockStyle.Fill,
             ReadOnly = true,
-            BorderStyle = BorderStyle.FixedSingle,
-            BackColor = Color.White,
-            ForeColor = HeroText,
-            Margin = new Padding(0),
         };
     }
 
-    private ComboBox CreateWorldTypeComboBox()
+    private static ComboBox CreateWorldTypeComboBox()
     {
         var combo = new ComboBox
         {
             Dock = DockStyle.Fill,
             DropDownStyle = ComboBoxStyle.DropDownList,
-            FlatStyle = FlatStyle.Flat,
-            BackColor = Color.White,
-            ForeColor = HeroText,
-            Margin = new Padding(0),
         };
 
         combo.Items.AddRange([
@@ -317,15 +297,13 @@ internal sealed class MainForm : Form
         return combo;
     }
 
-    private static CheckBox CreateOptionCheckBox(string text)
+    private static CheckBox CreateCheckBox(string text)
     {
         return new CheckBox
         {
             AutoSize = true,
             Text = text,
-            ForeColor = HeroText,
-            Font = new Font("Bahnschrift", 9.5F),
-            Margin = new Padding(0, 4, 18, 4),
+            Margin = new Padding(0, 4, 16, 4),
         };
     }
 
@@ -335,15 +313,14 @@ internal sealed class MainForm : Form
         {
             Text = text,
             AutoSize = true,
-            FlatStyle = FlatStyle.Flat,
-            ForeColor = Color.White,
-            BackColor = Accent,
             Padding = new Padding(18, 10, 18, 10),
-            Margin = new Padding(0),
+            FlatStyle = FlatStyle.Flat,
+            BackColor = Accent,
+            ForeColor = Color.White,
             Cursor = Cursors.Hand,
         };
-        button.FlatAppearance.BorderSize = 0;
 
+        button.FlatAppearance.BorderSize = 0;
         button.MouseEnter += (_, _) =>
         {
             if (button.Enabled)
@@ -357,167 +334,180 @@ internal sealed class MainForm : Form
         return button;
     }
 
-    private Control CreatePathRow(string labelText, TextBox textBox, string buttonText, EventHandler onClick)
+    private Control CreatePathRow(string labelText, TextBox textBox, string buttonText, EventHandler clickHandler)
     {
-        var panel = new TableLayoutPanel
+        var row = new TableLayoutPanel
         {
-            Dock = DockStyle.Fill,
+            Dock = DockStyle.Top,
             ColumnCount = 3,
             AutoSize = false,
-            Height = 36,
-            Margin = new Padding(0, 0, 0, 10),
-            BackColor = CardBg,
+            Height = 38,
+            Margin = new Padding(0, 0, 0, 8),
         };
-        panel.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 124));
-        panel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-        panel.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 132));
 
-        var label = new Label
+        row.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 140));
+        row.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        row.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 130));
+
+        row.Controls.Add(new Label
         {
-            AutoSize = true,
             Text = labelText,
-            ForeColor = HeroText,
+            AutoSize = true,
             Font = new Font("Bahnschrift", 10F, FontStyle.Bold),
-            Margin = new Padding(0, 8, 10, 0),
-        };
+            Margin = new Padding(0, 10, 8, 0),
+        }, 0, 0);
 
-        var button = new Button
+        row.Controls.Add(textBox, 1, 0);
+
+        var browse = new Button
         {
             Text = buttonText,
             Dock = DockStyle.Fill,
-            FlatStyle = FlatStyle.Flat,
-            BackColor = Color.FromArgb(236, 246, 241),
-            ForeColor = HeroText,
+            Margin = new Padding(10, 0, 0, 0),
             Cursor = Cursors.Hand,
-            Margin = new Padding(12, 0, 0, 0),
         };
-        button.FlatAppearance.BorderColor = Border;
-        button.FlatAppearance.BorderSize = 1;
-        button.Click += onClick;
+        browse.Click += clickHandler;
+        row.Controls.Add(browse, 2, 0);
 
-        panel.Controls.Add(label, 0, 0);
-        panel.Controls.Add(textBox, 1, 0);
-        panel.Controls.Add(button, 2, 0);
-
-        return panel;
+        return row;
     }
 
-    private void BrowseZip(object? sender, EventArgs e)
+    private void BrowseJavaInput(object? sender, EventArgs e)
     {
-        using var dialog = new OpenFileDialog
+        using var menu = new ContextMenuStrip();
+        menu.Items.Add("Select Folder", null, (_, _) => BrowseJavaFolder());
+        menu.Items.Add("Select Zip", null, (_, _) => BrowseJavaZip());
+        menu.Show(Cursor.Position);
+    }
+
+    private void BrowseJavaFolder()
+    {
+        using var dialog = new FolderBrowserDialog
         {
-            Filter = "Zip archives (*.zip)|*.zip",
-            Title = "Select Java World Zip",
+            Description = "Select Java world folder",
+            UseDescriptionForTitle = true,
         };
 
         if (dialog.ShowDialog(this) != DialogResult.OK)
             return;
 
-        _zipPathTextBox.Text = dialog.FileName;
-        if (string.IsNullOrWhiteSpace(_outputPathTextBox.Text))
-        {
-            string suggested = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory), Path.GetFileNameWithoutExtension(dialog.FileName));
-            _outputPathTextBox.Text = suggested;
-        }
+        _javaInputTextBox.Text = dialog.SelectedPath;
+        AutoFillJavaOutput();
     }
 
-    private void BrowseOutputFolder(object? sender, EventArgs e)
+    private void BrowseJavaZip()
+    {
+        using var dialog = new OpenFileDialog
+        {
+            Filter = "Zip archives (*.zip)|*.zip",
+            Title = "Select Java world zip",
+        };
+
+        if (dialog.ShowDialog(this) != DialogResult.OK)
+            return;
+
+        _javaInputTextBox.Text = dialog.FileName;
+        AutoFillJavaOutput();
+    }
+
+    private void AutoFillJavaOutput()
+    {
+        if (!string.IsNullOrWhiteSpace(_javaOutputTextBox.Text))
+            return;
+
+        string name = Directory.Exists(_javaInputTextBox.Text)
+            ? Path.GetFileName(_javaInputTextBox.Text)
+            : Path.GetFileNameWithoutExtension(_javaInputTextBox.Text);
+
+        if (string.IsNullOrWhiteSpace(name))
+            name = "ConvertedWorld";
+
+        _javaOutputTextBox.Text = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory), name);
+    }
+
+    private void BrowseJavaOutput(object? sender, EventArgs e)
     {
         using var dialog = new FolderBrowserDialog
         {
-            Description = "Choose where saveData.ms should be written",
+            Description = "Choose output folder for saveData.ms",
             UseDescriptionForTitle = true,
-            InitialDirectory = Directory.Exists(_outputPathTextBox.Text) ? _outputPathTextBox.Text : Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory),
+            InitialDirectory = Directory.Exists(_javaOutputTextBox.Text) ? _javaOutputTextBox.Text : Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory),
         };
 
         if (dialog.ShowDialog(this) == DialogResult.OK)
-            _outputPathTextBox.Text = dialog.SelectedPath;
+            _javaOutputTextBox.Text = dialog.SelectedPath;
     }
 
-    private async void ConvertClicked(object? sender, EventArgs e)
+    private void BrowseLceInput(object? sender, EventArgs e)
     {
-        if (!ValidateInputs())
+        using var dialog = new OpenFileDialog
+        {
+            Filter = "LCE save files (saveData.ms)|saveData.ms|All files (*.*)|*.*",
+            Title = "Select saveData.ms",
+        };
+
+        if (dialog.ShowDialog(this) != DialogResult.OK)
             return;
 
-        string outputSavePath = Path.Combine(_outputPathTextBox.Text, "saveData.ms");
-        if (File.Exists(outputSavePath))
+        _lceInputTextBox.Text = dialog.FileName;
+
+        if (string.IsNullOrWhiteSpace(_lceOutputTextBox.Text))
         {
-            DialogResult overwrite = MessageBox.Show(
-                this,
-                "The selected output folder already contains saveData.ms. Do you want to overwrite it?",
-                "Overwrite Existing Output",
-                MessageBoxButtons.YesNo,
-                MessageBoxIcon.Warning);
-
-            if (overwrite != DialogResult.Yes)
-                return;
-        }
-
-        ToggleBusy(true, "Converting...");
-        _logTextBox.Clear();
-
-        try
-        {
-            ConversionOptions options = BuildOptions();
-            var logger = new UiConversionLogger(AppendLog);
-            var service = new LceWorldConversionService();
-
-            ConversionResult result = await Task.Run(() => service.Convert(options, logger));
-
-            AppendLog(string.Empty);
-            AppendLog($"Finished: {result.OutputPath}");
-
-            MessageBox.Show(
-                this,
-                $"Conversion complete.\n\nOutput: {result.OutputPath}",
-                "LCE World Converter",
-                MessageBoxButtons.OK,
-                MessageBoxIcon.Information);
-        }
-        catch (Exception ex)
-        {
-            AppendLog($"Error: {ex.Message}");
-            MessageBox.Show(
-                this,
-                ex.Message,
-                "Conversion Failed",
-                MessageBoxButtons.OK,
-                MessageBoxIcon.Error);
-        }
-        finally
-        {
-            ToggleBusy(false, "Ready");
+            string worldName = Path.GetFileNameWithoutExtension(dialog.FileName);
+            if (string.IsNullOrWhiteSpace(worldName))
+                worldName = "JavaWorld";
+            _lceOutputTextBox.Text = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory), worldName + "-java");
         }
     }
 
-    private bool ValidateInputs()
+    private void BrowseLceOutput(object? sender, EventArgs e)
     {
-        if (string.IsNullOrWhiteSpace(_zipPathTextBox.Text) || !File.Exists(_zipPathTextBox.Text))
+        using var dialog = new FolderBrowserDialog
         {
-            MessageBox.Show(this, "Select a valid world zip first.", "Missing Zip", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-            return false;
-        }
+            Description = "Choose output folder for Java world files",
+            UseDescriptionForTitle = true,
+            InitialDirectory = Directory.Exists(_lceOutputTextBox.Text) ? _lceOutputTextBox.Text : Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory),
+        };
 
-        if (!string.Equals(Path.GetExtension(_zipPathTextBox.Text), ".zip", StringComparison.OrdinalIgnoreCase))
-        {
-            MessageBox.Show(this, "The input must be a .zip archive.", "Invalid Zip", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-            return false;
-        }
-
-        if (string.IsNullOrWhiteSpace(_outputPathTextBox.Text))
-        {
-            MessageBox.Show(this, "Select an output folder.", "Missing Output Folder", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-            return false;
-        }
-
-        Directory.CreateDirectory(_outputPathTextBox.Text);
-        return true;
+        if (dialog.ShowDialog(this) == DialogResult.OK)
+            _lceOutputTextBox.Text = dialog.SelectedPath;
     }
 
-    private ConversionOptions BuildOptions()
+    private async void ConvertJavaToLceClicked(object? sender, EventArgs e)
     {
-        string worldType = (_worldTypeComboBox.SelectedItem as string) ?? "classic";
+        if (!ValidateJavaInputs())
+            return;
+
+        ConversionOptions options = BuildJavaToLceOptions();
+        await RunConversionAsync(options);
+    }
+
+    private async void ConvertLceToJavaClicked(object? sender, EventArgs e)
+    {
+        if (!ValidateLceInputs())
+            return;
+
+        ConversionOptions options = new ConversionOptions
+        {
+            Direction = ConversionDirection.LceToJava,
+            InputPath = _lceInputTextBox.Text,
+            OutputDirectory = _lceOutputTextBox.Text,
+            XzSize = 54,
+            SizeLabel = "Classic",
+            FlatWorld = false,
+            ConvertAllDimensions = _lceAllDimensionsCheckBox.Checked,
+            CopyPlayers = _lceCopyPlayersCheckBox.Checked,
+            PreserveEntities = false,
+        };
+
+        await RunConversionAsync(options);
+    }
+
+    private ConversionOptions BuildJavaToLceOptions()
+    {
+        string worldType = (_javaWorldTypeComboBox.SelectedItem as string) ?? "classic";
         bool flatWorld = worldType.StartsWith("flat", StringComparison.OrdinalIgnoreCase);
+
         int xzSize = worldType switch
         {
             "small" or "flat-small" => 64,
@@ -536,27 +526,103 @@ internal sealed class MainForm : Form
 
         return new ConversionOptions
         {
-            InputPath = _zipPathTextBox.Text,
-            OutputDirectory = _outputPathTextBox.Text,
+            Direction = ConversionDirection.JavaToLce,
+            InputPath = _javaInputTextBox.Text,
+            OutputDirectory = _javaOutputTextBox.Text,
             XzSize = xzSize,
             SizeLabel = sizeLabel,
             FlatWorld = flatWorld,
-            ConvertAllDimensions = _allDimensionsCheckBox.Checked,
-            CopyPlayers = _copyPlayersCheckBox.Checked,
-            PreserveEntities = _preserveEntitiesCheckBox.Checked,
+            ConvertAllDimensions = _javaAllDimensionsCheckBox.Checked,
+            CopyPlayers = _javaCopyPlayersCheckBox.Checked,
+            PreserveEntities = _javaPreserveEntitiesCheckBox.Checked,
         };
     }
 
-    private void ToggleBusy(bool isBusy, string status)
+    private async Task RunConversionAsync(ConversionOptions options)
     {
-        _convertButton.Enabled = !isBusy;
-        _worldTypeComboBox.Enabled = !isBusy;
-        _allDimensionsCheckBox.Enabled = !isBusy;
-        _copyPlayersCheckBox.Enabled = !isBusy;
-        _preserveEntitiesCheckBox.Enabled = !isBusy;
+        ToggleBusy(true, "Converting...");
+        _logTextBox.Clear();
+
+        try
+        {
+            var logger = new UiConversionLogger(AppendLog);
+            var service = new LceWorldConversionService();
+            ConversionResult result = await Task.Run(() => service.Convert(options, logger));
+
+            AppendLog(string.Empty);
+            AppendLog($"Finished: {result.OutputPath}");
+
+            MessageBox.Show(
+                this,
+                $"Conversion complete.\n\nOutput: {result.OutputPath}",
+                "LCE World Converter",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Information);
+        }
+        catch (Exception ex)
+        {
+            AppendLog($"Error: {ex.Message}");
+            MessageBox.Show(this, ex.Message, "Conversion Failed", MessageBoxButtons.OK, MessageBoxIcon.Error);
+        }
+        finally
+        {
+            ToggleBusy(false, "Ready");
+        }
+    }
+
+    private bool ValidateJavaInputs()
+    {
+        if (string.IsNullOrWhiteSpace(_javaInputTextBox.Text))
+        {
+            MessageBox.Show(this, "Select a Java world folder or zip first.", "Missing Input", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            return false;
+        }
+
+        bool isFolder = Directory.Exists(_javaInputTextBox.Text);
+        bool isZip = File.Exists(_javaInputTextBox.Text) && string.Equals(Path.GetExtension(_javaInputTextBox.Text), ".zip", StringComparison.OrdinalIgnoreCase);
+        if (!isFolder && !isZip)
+        {
+            MessageBox.Show(this, "Input must be an existing world folder or .zip file.", "Invalid Input", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            return false;
+        }
+
+        if (string.IsNullOrWhiteSpace(_javaOutputTextBox.Text))
+        {
+            MessageBox.Show(this, "Select an output folder.", "Missing Output", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            return false;
+        }
+
+        Directory.CreateDirectory(_javaOutputTextBox.Text);
+        return true;
+    }
+
+    private bool ValidateLceInputs()
+    {
+        if (string.IsNullOrWhiteSpace(_lceInputTextBox.Text) || !File.Exists(_lceInputTextBox.Text))
+        {
+            MessageBox.Show(this, "Select a valid saveData.ms file.", "Missing Input", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            return false;
+        }
+
+        if (string.IsNullOrWhiteSpace(_lceOutputTextBox.Text))
+        {
+            MessageBox.Show(this, "Select an output folder.", "Missing Output", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            return false;
+        }
+
+        Directory.CreateDirectory(_lceOutputTextBox.Text);
+        return true;
+    }
+
+    private void ToggleBusy(bool busy, string status)
+    {
+        _javaConvertButton.Enabled = !busy;
+        _lceConvertButton.Enabled = !busy;
         _statusLabel.Text = status;
-        _progressBar.Style = isBusy ? ProgressBarStyle.Marquee : ProgressBarStyle.Blocks;
-        _convertButton.BackColor = _convertButton.Enabled ? Accent : Color.FromArgb(145, 150, 148);
+
+        Color disabledColor = Color.FromArgb(145, 150, 148);
+        _javaConvertButton.BackColor = _javaConvertButton.Enabled ? Accent : disabledColor;
+        _lceConvertButton.BackColor = _lceConvertButton.Enabled ? Accent : disabledColor;
     }
 
     private void AppendLog(string message)
@@ -579,7 +645,6 @@ internal sealed class MainForm : Form
     private sealed class UiConversionLogger(Action<string> appendLog) : IConversionLogger
     {
         public void Info(string message) => appendLog(message);
-
         public void Error(string message) => appendLog(message);
     }
 }

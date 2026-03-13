@@ -46,6 +46,14 @@ public static class LceCompression
     }
 
     /// <summary>
+    /// Decompress zlib-only payloads (no RLE pass).
+    /// </summary>
+    public static byte[] DecompressZlibOnly(byte[] compressed)
+    {
+        return ZlibDecompress(compressed);
+    }
+
+    /// <summary>
     /// RLE encode matching the LCE source CompressLZXRLE algorithm exactly.
     /// </summary>
     public static byte[] RleEncode(byte[] data)

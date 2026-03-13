@@ -130,6 +130,68 @@ public static class LevelDatConverter
         return ms.ToArray();
     }
 
+    public static byte[] ConvertLceToJava(
+        NbtCompound lceRoot,
+        int? overrideSpawnX = null,
+        int? overrideSpawnY = null,
+        int? overrideSpawnZ = null)
+    {
+        NbtCompound lceData = lceRoot.Get<NbtCompound>("Data") ?? lceRoot;
+        NbtCompound javaData = (NbtCompound)lceData.Clone();
+
+        string[] lceOnlyFields =
+        [
+            "newSeaLevel",
+            "hasBeenInCreative",
+            "spawnBonusChest",
+            "XZSize",
+            "xzSize",
+            "HellScale",
+            "hellScale",
+            "hasStronghold",
+            "StrongholdX",
+            "StrongholdY",
+            "StrongholdZ",
+            "hasStrongholdEndPortal",
+            "StrongholdEndPortalX",
+            "StrongholdEndPortalZ",
+            "xStronghold",
+            "yStronghold",
+            "zStronghold",
+            "hasStrongholdEP",
+            "xStrongholdEP",
+            "zStrongholdEP",
+        ];
+
+        foreach (string field in lceOnlyFields)
+        {
+            if (javaData.Contains(field))
+                javaData.Remove(field);
+        }
+
+        if (overrideSpawnX.HasValue)
+            UpsertTag(javaData, new NbtInt("SpawnX", overrideSpawnX.Value));
+        if (overrideSpawnY.HasValue)
+            UpsertTag(javaData, new NbtInt("SpawnY", overrideSpawnY.Value));
+        if (overrideSpawnZ.HasValue)
+            UpsertTag(javaData, new NbtInt("SpawnZ", overrideSpawnZ.Value));
+
+        UpsertTag(javaData, new NbtLong("LastPlayed", DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()));
+
+        var javaRoot = new NbtCompound(string.Empty)
+        {
+            new NbtCompound("Data")
+        };
+
+        foreach (NbtTag tag in javaData)
+            ((NbtCompound)javaRoot["Data"]!).Add((NbtTag)tag.Clone());
+
+        var file = new NbtFile(javaRoot);
+        using var ms = new MemoryStream();
+        file.SaveToStream(ms, NbtCompression.GZip);
+        return ms.ToArray();
+    }
+
     #region Helpers
 
     private static long GetLong(NbtCompound tag, string name, long def = 0)
@@ -146,6 +208,17 @@ public static class LevelDatConverter
         var b = tag.Get<NbtByte>(name);
         if (b != null) return b.Value;
         return (byte)(def ? 1 : 0);
+    }
+
+    private static void UpsertTag(NbtCompound compound, NbtTag tag)
+    {
+        if (string.IsNullOrEmpty(tag.Name))
+            return;
+
+        if (compound.Contains(tag.Name))
+            compound.Remove(tag.Name);
+
+        compound.Add(tag);
     }
 
     #endregion

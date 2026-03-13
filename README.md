@@ -5,8 +5,7 @@
 [![GitHub Stars](https://img.shields.io/github/stars/veroxsity/LCE-Save-Converter?style=social)](https://github.com/veroxsity/LCE-Save-Converter/stargazers)
 [![.NET 8](https://img.shields.io/badge/.NET-8-512BD4)](https://dotnet.microsoft.com/download/dotnet/8.0)
 
-Convert Java Edition worlds into Minecraft Legacy Console Edition (LCE) `saveData.ms`.
-LCE to Java coming soon!
+Convert Java Edition worlds into Minecraft Legacy Console Edition (LCE) `saveData.ms`, and convert LCE saves back to Java world folders.
 
 ## Quick Start (Prebuilt)
 
@@ -27,17 +26,21 @@ The converter extracts your zip to a temp folder and writes `saveData.ms` to the
 ### CLI (Prebuilt EXE)
 
 ```powershell
-.\LceWorldConverter.exe <java_world_folder_or_zip> [output_dir] [--world-type <classic|small|medium|large|flat|flat-small|flat-medium|flat-large>] [--all-dimensions] [--copy-players] [--preserve-entities]
+.\LceWorldConverter.exe --from java <java_world_folder_or_zip> <output_dir> [--world-type <classic|small|medium|large|flat|flat-small|flat-medium|flat-large>] [--all-dimensions] [--copy-players] [--preserve-entities]
+.\LceWorldConverter.exe --from lce <saveData.ms_path> <java_world_output_dir> [--all-dimensions] [--copy-players]
 ```
 
 Common examples:
 
 ```powershell
 # Folder input
-.\LceWorldConverter.exe "C:\Users\You\AppData\Roaming\.minecraft\saves\MyWorld" "D:\GameHDD\MySlot" --world-type large --all-dimensions
+.\LceWorldConverter.exe --from java "C:\Users\You\AppData\Roaming\.minecraft\saves\MyWorld" "D:\GameHDD\MySlot" --world-type large --all-dimensions
 
 # Zip input
-.\LceWorldConverter.exe "C:\Users\You\Desktop\MyWorld.zip" "D:\GameHDD\MySlot"
+.\LceWorldConverter.exe --from java "C:\Users\You\Desktop\MyWorld.zip" "D:\GameHDD\MySlot"
+
+# LCE to Java
+.\LceWorldConverter.exe --from lce "D:\GameHDD\MySlot\saveData.ms" "C:\Users\You\Desktop\RecoveredJavaWorld" --all-dimensions --copy-players
 ```
 
 ## What You Get
@@ -59,14 +62,17 @@ Drop `saveData.ms` into your server world folder (for example `GameHDD/<worldnam
 
 | Argument | Description |
 |---|---|
-| `java_world_folder_or_zip` | Path to Java world folder or `.zip` containing it |
-| `output_dir` | Optional output directory for `saveData.ms` |
-| `--world-type <...>` | `classic`, `small`, `medium`, `large`, `flat`, `flat-small`, `flat-medium`, `flat-large` |
+| `--from java|lce` | Conversion direction |
+| `java_world_folder_or_zip` | Java->LCE input path |
+| `saveData.ms_path` | LCE->Java input path |
+| `output_dir` | Java->LCE output directory for `saveData.ms` |
+| `java_world_output_dir` | LCE->Java output world directory |
+| `--world-type <...>` | Java->LCE only: `classic`, `small`, `medium`, `large`, `flat`, `flat-small`, `flat-medium`, `flat-large` |
 | `--all-dimensions` | Convert Nether and End too |
-| `--copy-players` | Import numeric `players/*.dat` files |
-| `--preserve-entities` | Keep entities/tile data (less compatibility-safe) |
+| `--copy-players` | Java->LCE imports numeric player data; LCE->Java exports `players/*.dat` |
+| `--preserve-entities` | Java->LCE only: keep entities/tile data (less compatibility-safe) |
 
-Legacy aliases still exist: `--small-world`, `--medium-world`, `--large-world`, `--flat-world`.
+Legacy Java->LCE positional mode still exists: `.\LceWorldConverter.exe <java_world_folder_or_zip> [output_dir] [flags...]`.
 
 ## Inspect Existing saveData.ms
 
@@ -111,5 +117,5 @@ dotnet run --project .\LceWorldConverter.Gui\LceWorldConverter.Gui.csproj
 Run CLI from source:
 
 ```powershell
-dotnet run --project .\LceWorldConverter.csproj -- <java_world_folder_or_zip> [output_dir]
+dotnet run --project .\LceWorldConverter.csproj -- --from java <java_world_folder_or_zip> <output_dir>
 ```

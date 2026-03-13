@@ -11,21 +11,28 @@ public static class CommandLineOptionsParser
     {
         return
         [
-            "Usage: LceWorldConverter <java_world_folder_or_zip> [output_dir] [--world-type <classic|small|medium|large|flat|flat-small|flat-medium|flat-large>] [--all-dimensions] [--copy-players] [--preserve-entities]",
+            "Usage:",
+            "  LceWorldConverter --from java <java_world_folder_or_zip> <output_dir> [--world-type <classic|small|medium|large|flat|flat-small|flat-medium|flat-large>] [--all-dimensions] [--copy-players] [--preserve-entities]",
+            "  LceWorldConverter --from lce <saveData.ms_path> <java_world_output_dir> [--all-dimensions] [--copy-players]",
             string.Empty,
+            "  --from java|lce           Conversion direction.",
             "  java_world_folder_or_zip  Path to a Java world folder or a .zip archive containing one.",
-            "  output_dir                Optional: directory to write saveData.ms into.",
-            "                            Defaults to a folder named after the source world in the current directory.",
-            "  --world-type              Unified world profile selector (recommended):",
+            "  saveData.ms_path          Path to an LCE saveData.ms file.",
+            "  output_dir                Java->LCE: directory to write saveData.ms into.",
+            "  java_world_output_dir     LCE->Java: output world folder to create/populate.",
+            "  --world-type              Java->LCE world profile selector:",
             "                            classic, small, medium, large, flat, flat-small, flat-medium, flat-large",
             "                            (flat = classic size + flat generator)",
-            "  --small-world             Use 64-chunk (1024 block) world size",
-            "  --medium-world            Use 192-chunk (3072 block) world size",
-            "  --large-world             Use 320-chunk (5120 block) world size",
-            "  --flat-world              Force output level.dat generatorName to flat",
-            "  --all-dimensions          Convert Nether and End in addition to Overworld (experimental)",
-            "  --copy-players            Import Java players/*.dat (numeric filenames only)",
-            "  --preserve-entities       Keep chunk Entities/TileEntities/TileTicks (may reduce compatibility)",
+            "  --small-world             Java->LCE: use 64-chunk (1024 block) world size",
+            "  --medium-world            Java->LCE: use 192-chunk (3072 block) world size",
+            "  --large-world             Java->LCE: use 320-chunk (5120 block) world size",
+            "  --flat-world              Java->LCE: force output generatorName to flat",
+            "  --all-dimensions          Convert Nether and End in addition to Overworld",
+            "  --copy-players            Java->LCE: import numeric players/*.dat; LCE->Java: export players/*.dat",
+            "  --preserve-entities       Java->LCE only: keep chunk dynamic entity/tile data",
+            string.Empty,
+            "Legacy Java->LCE positional mode still works:",
+            "  LceWorldConverter <java_world_folder_or_zip> [output_dir] [flags...]",
             string.Empty,
             "Use the Windows GUI project if you want a desktop app for selecting a world zip and output folder.",
         ];
@@ -41,6 +48,29 @@ public static class CommandLineOptionsParser
             return false;
         }
 
+        int fromIndex = Array.IndexOf(args, "--from");
+        if (fromIndex < 0)
+            return TryParseLegacyJavaToLce(args, out options, out error);
+
+        if (fromIndex + 1 >= args.Length || args[fromIndex + 1].StartsWith("--", StringComparison.Ordinal))
+        {
+            error = "--from requires a value: java or lce.";
+            return false;
+        }
+
+        string from = args[fromIndex + 1].Trim().ToLowerInvariant();
+        return from switch
+        {
+            "java" => TryParseFromJava(args, fromIndex, out options, out error),
+            "lce" => TryParseFromLce(args, fromIndex, out options, out error),
+            _ => Fail("Unknown --from value. Valid values are: java, lce.", out options, out error),
+        };
+    }
+
+    private static bool TryParseLegacyJavaToLce(string[] args, out ConversionOptions? options, out string? error)
+    {
+        options = null;
+
         string inputPath = args[0];
         string? outputDirArg = args.Length > 1 && !args[1].StartsWith("--", StringComparison.Ordinal) ? args[1] : null;
 
@@ -53,6 +83,7 @@ public static class CommandLineOptionsParser
 
         options = new ConversionOptions
         {
+            Direction = ConversionDirection.JavaToLce,
             InputPath = inputPath,
             OutputDirectory = outputDirArg ?? Path.Combine(Directory.GetCurrentDirectory(), outputName),
             XzSize = xzSize,
@@ -65,6 +96,109 @@ public static class CommandLineOptionsParser
 
         error = null;
         return true;
+    }
+
+    private static bool TryParseFromJava(string[] args, int fromIndex, out ConversionOptions? options, out string? error)
+    {
+        options = null;
+
+        var positionals = CollectPositionals(args, fromIndex);
+        if (positionals.Count < 2)
+        {
+            error = "Expected <java_world_folder_or_zip> and <output_dir> after --from java.";
+            return false;
+        }
+
+        string inputPath = positionals[0];
+        string outputDirectory = positionals[1];
+
+        if (!TryParseWorldSettings(args, out int xzSize, out string sizeLabel, out bool flatWorld, out error))
+            return false;
+
+        options = new ConversionOptions
+        {
+            Direction = ConversionDirection.JavaToLce,
+            InputPath = inputPath,
+            OutputDirectory = outputDirectory,
+            XzSize = xzSize,
+            SizeLabel = sizeLabel,
+            FlatWorld = flatWorld,
+            ConvertAllDimensions = args.Contains("--all-dimensions"),
+            CopyPlayers = args.Contains("--copy-players"),
+            PreserveEntities = args.Contains("--preserve-entities"),
+        };
+
+        error = null;
+        return true;
+    }
+
+    private static bool TryParseFromLce(string[] args, int fromIndex, out ConversionOptions? options, out string? error)
+    {
+        options = null;
+
+        var positionals = CollectPositionals(args, fromIndex);
+        if (positionals.Count < 2)
+        {
+            error = "Expected <saveData.ms_path> and <java_world_output_dir> after --from lce.";
+            return false;
+        }
+
+        if (args.Contains("--preserve-entities"))
+        {
+            error = "--preserve-entities is only valid with --from java.";
+            return false;
+        }
+
+        if (args.Contains("--world-type") || args.Contains("--small-world") || args.Contains("--medium-world") || args.Contains("--large-world") || args.Contains("--flat-world"))
+        {
+            error = "World-size and flat-world flags are only valid with --from java.";
+            return false;
+        }
+
+        options = new ConversionOptions
+        {
+            Direction = ConversionDirection.LceToJava,
+            InputPath = positionals[0],
+            OutputDirectory = positionals[1],
+            XzSize = ClassicWorldSize,
+            SizeLabel = "Classic",
+            FlatWorld = false,
+            ConvertAllDimensions = args.Contains("--all-dimensions"),
+            CopyPlayers = args.Contains("--copy-players"),
+            PreserveEntities = false,
+        };
+
+        error = null;
+        return true;
+    }
+
+    private static List<string> CollectPositionals(string[] args, int fromIndex)
+    {
+        var positionals = new List<string>();
+        for (int i = 0; i < args.Length; i++)
+        {
+            if (i == fromIndex || i == fromIndex + 1)
+                continue;
+
+            if (args[i].StartsWith("--", StringComparison.Ordinal))
+            {
+                if (args[i].Equals("--world-type", StringComparison.Ordinal) && i + 1 < args.Length)
+                    i++;
+
+                continue;
+            }
+
+            positionals.Add(args[i]);
+        }
+
+        return positionals;
+    }
+
+    private static bool Fail(string message, out ConversionOptions? options, out string? error)
+    {
+        options = null;
+        error = message;
+        return false;
     }
 
     private static bool TryParseWorldSettings(

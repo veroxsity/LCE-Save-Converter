@@ -10,9 +10,18 @@ public sealed class LceWorldConversionService
     public ConversionResult Convert(ConversionOptions options, IConversionLogger? logger = null)
     {
         ArgumentNullException.ThrowIfNull(options);
-
         logger ??= NullConversionLogger.Instance;
 
+        return options.Direction switch
+        {
+            ConversionDirection.JavaToLce => ConvertJavaToLce(options, logger),
+            ConversionDirection.LceToJava => ConvertLceToJava(options, logger),
+            _ => throw new InvalidOperationException($"Unsupported conversion direction: {options.Direction}"),
+        };
+    }
+
+    private ConversionResult ConvertJavaToLce(ConversionOptions options, IConversionLogger logger)
+    {
         using var preparedWorld = PreparedJavaWorld.Open(options.InputPath);
 
         string javaWorldPath = preparedWorld.WorldPath;
@@ -154,6 +163,519 @@ public sealed class LceWorldConversionService
             UnknownModernBlocks = unknownBlocks,
             UnknownBlocksPath = unknownPath,
         };
+    }
+
+    private ConversionResult ConvertLceToJava(ConversionOptions options, IConversionLogger logger)
+    {
+        string saveDataPath = options.InputPath;
+        if (!File.Exists(saveDataPath))
+            throw new FileNotFoundException($"saveData.ms not found: {saveDataPath}", saveDataPath);
+
+        string outputDir = options.OutputDirectory;
+        Directory.CreateDirectory(outputDir);
+        DeleteLegacyOutputRegions(outputDir);
+
+        logger.Info($"Source:      {saveDataPath}");
+        logger.Info($"Output:      {outputDir}");
+        logger.Info(string.Empty);
+
+        var saveReader = new LceSaveDataReader(saveDataPath);
+
+        if (!saveReader.TryReadLevelDat(out NbtCompound lceLevelDat))
+            throw new InvalidDataException("Input saveData.ms does not contain a readable level.dat entry.");
+
+        logger.Info("Converting overworld regions...");
+        var overworldStats = ConvertLceRegionsToJava(saveReader, outputDir, "overworld", logger);
+        int overworldChunks = overworldStats.chunkCount;
+
+        int netherChunks = 0;
+        int endChunks = 0;
+        if (options.ConvertAllDimensions)
+        {
+            logger.Info("Converting nether regions...");
+            netherChunks = ConvertLceRegionsToJava(saveReader, outputDir, "nether", logger).chunkCount;
+
+            logger.Info("Converting end regions...");
+            endChunks = ConvertLceRegionsToJava(saveReader, outputDir, "end", logger).chunkCount;
+        }
+        else
+        {
+            logger.Info("Skipping nether/end conversion (use --all-dimensions to enable).");
+        }
+
+        int? spawnX = null;
+        int? spawnY = null;
+        int? spawnZ = null;
+        if (overworldStats.densestChunk.HasValue)
+        {
+            var dense = overworldStats.densestChunk.Value;
+            spawnX = dense.chunkX * 16 + 8;
+            spawnY = Math.Clamp(dense.maxY + 1, 5, 127);
+            spawnZ = dense.chunkZ * 16 + 8;
+            logger.Info($"Setting Java spawn near populated area: ({spawnX}, {spawnY}, {spawnZ})");
+        }
+
+        logger.Info("Converting level.dat...");
+        byte[] javaLevelDat = LevelDatConverter.ConvertLceToJava(lceLevelDat, spawnX, spawnY, spawnZ);
+        File.WriteAllBytes(Path.Combine(outputDir, "level.dat"), javaLevelDat);
+
+        int playersCopied = 0;
+        if (options.CopyPlayers)
+        {
+            logger.Info("Exporting player data...");
+            playersCopied = ExportPlayers(saveReader, outputDir);
+            logger.Info($"  {playersCopied} player(s)");
+        }
+        else
+        {
+            logger.Info("Skipping player export (use --copy-players to enable).");
+        }
+
+        logger.Info(string.Empty);
+        logger.Info("Conversion complete!");
+        logger.Info($"  Overworld: {overworldChunks} chunks");
+        logger.Info($"  Nether:    {netherChunks} chunks");
+        logger.Info($"  End:       {endChunks} chunks");
+        logger.Info($"  Output:    {outputDir}");
+
+        return new ConversionResult
+        {
+            SourceWorldPath = saveDataPath,
+            OutputDirectory = outputDir,
+            OutputPath = outputDir,
+            OverworldChunks = overworldChunks,
+            NetherChunks = netherChunks,
+            EndChunks = endChunks,
+            PlayersCopied = playersCopied,
+            UnknownModernBlocks = Array.Empty<string>(),
+            UnknownBlocksPath = null,
+        };
+    }
+
+    private static (int chunkCount, DensestChunk? densestChunk) ConvertLceRegionsToJava(
+        LceSaveDataReader saveReader,
+        string outputDir,
+        string dimension,
+        IConversionLogger logger)
+    {
+        int chunkCount = 0;
+        DensestChunk? densestChunk = null;
+        var writers = new Dictionary<(int rx, int rz), JavaRegionFileWriter>();
+
+        foreach (var entry in saveReader.EnumerateEntries())
+        {
+            if (!TryMatchRegionEntry(entry.Name, dimension, out int rx, out int rz))
+                continue;
+
+            if (!saveReader.TryGetFileBytes(entry.Name, out byte[] regionBytes) || regionBytes.Length < 8192)
+                continue;
+
+            string regionDir = dimension switch
+            {
+                "nether" => Path.Combine(outputDir, "DIM-1", "region"),
+                "end" => Path.Combine(outputDir, "DIM1", "region"),
+                _ => Path.Combine(outputDir, "region"),
+            };
+
+            string regionPath = Path.Combine(regionDir, $"r.{rx}.{rz}.mca");
+            if (!writers.TryGetValue((rx, rz), out JavaRegionFileWriter? writer))
+            {
+                writer = new JavaRegionFileWriter(regionPath);
+                writers[(rx, rz)] = writer;
+            }
+
+            chunkCount += DecodeLceRegionIntoWriter(regionBytes, rx, rz, writer, ref densestChunk, dimension == "overworld");
+        }
+
+        foreach (var writer in writers.Values)
+            writer.Save();
+
+        logger.Info($"  {chunkCount} chunks converted");
+        return (chunkCount, densestChunk);
+    }
+
+    private static void DeleteLegacyOutputRegions(string outputDir)
+    {
+        string[] regionDirs =
+        [
+            Path.Combine(outputDir, "region"),
+            Path.Combine(outputDir, "DIM-1", "region"),
+            Path.Combine(outputDir, "DIM1", "region"),
+        ];
+
+        foreach (string dir in regionDirs)
+        {
+            if (!Directory.Exists(dir))
+                continue;
+
+            foreach (string file in Directory.GetFiles(dir, "*.mcr"))
+                File.Delete(file);
+            foreach (string file in Directory.GetFiles(dir, "*.mca"))
+                File.Delete(file);
+        }
+    }
+
+    private static int DecodeLceRegionIntoWriter(
+        byte[] regionBytes,
+        int regionX,
+        int regionZ,
+        JavaRegionFileWriter writer,
+        ref DensestChunk? densestChunk,
+        bool trackDensity)
+    {
+        int converted = 0;
+
+        for (int index = 0; index < 1024; index++)
+        {
+            uint offsetEntry = BitConverter.ToUInt32(regionBytes, index * 4);
+            if (offsetEntry == 0)
+                continue;
+
+            int sectorOffset = (int)(offsetEntry >> 8);
+            if (sectorOffset <= 0)
+                continue;
+
+            int chunkPos = sectorOffset * 4096;
+            if (chunkPos + 8 > regionBytes.Length)
+                continue;
+
+            uint compressedLengthRaw = BitConverter.ToUInt32(regionBytes, chunkPos);
+            bool usesRle = (compressedLengthRaw & 0x80000000u) != 0;
+            int compressedLength = (int)(compressedLengthRaw & 0x7FFFFFFF);
+            int decompressedLength = (int)BitConverter.ToUInt32(regionBytes, chunkPos + 4);
+
+            if (compressedLength <= 0 || chunkPos + 8 + compressedLength > regionBytes.Length)
+                continue;
+
+            byte[] compressed = new byte[compressedLength];
+            Buffer.BlockCopy(regionBytes, chunkPos + 8, compressed, 0, compressedLength);
+
+            byte[] nbtBytes;
+            try
+            {
+                nbtBytes = usesRle
+                    ? LceCompression.Decompress(compressed, decompressedLength)
+                    : LceCompression.DecompressZlibOnly(compressed);
+            }
+            catch
+            {
+                continue;
+            }
+
+            int localX = index & 31;
+            int localZ = index >> 5;
+            int chunkX = regionX * 32 + localX;
+            int chunkZ = regionZ * 32 + localZ;
+
+            byte[] prepared = PrepareJavaChunkNbt(nbtBytes, chunkX, chunkZ);
+            writer.WriteChunk(localX, localZ, prepared);
+
+            if (trackDensity)
+                TrackChunkDensity(prepared, chunkX, chunkZ, ref densestChunk);
+
+            converted++;
+        }
+
+        return converted;
+    }
+
+    private static void TrackChunkDensity(byte[] chunkNbt, int chunkX, int chunkZ, ref DensestChunk? densestChunk)
+    {
+        try
+        {
+            var file = new NbtFile();
+            file.LoadFromBuffer(chunkNbt, 0, chunkNbt.Length, NbtCompression.None);
+            var level = file.RootTag.Get<NbtCompound>("Level") ?? file.RootTag;
+            int nonAir = 0;
+            int maxY = 0;
+
+            var blocks = level.Get<NbtByteArray>("Blocks")?.Value;
+            if (blocks != null && blocks.Length >= 32768)
+            {
+                for (int y = 0; y < 128; y++)
+                {
+                    bool layerHasSolid = false;
+                    for (int z = 0; z < 16; z++)
+                    {
+                        for (int x = 0; x < 16; x++)
+                        {
+                            int idx = ((x * 16) + z) * 128 + y;
+                            if (blocks[idx] != 0)
+                            {
+                                nonAir++;
+                                layerHasSolid = true;
+                            }
+                        }
+                    }
+
+                    if (layerHasSolid)
+                        maxY = y;
+                }
+            }
+            else if (level.Get<NbtList>("Sections") is NbtList sections)
+            {
+                foreach (NbtTag tag in sections)
+                {
+                    if (tag is not NbtCompound section)
+                        continue;
+
+                    int sectionY = section.Get<NbtByte>("Y")?.Value ?? -1;
+                    if (sectionY < 0 || sectionY > 15)
+                        continue;
+
+                    byte[]? secBlocks = section.Get<NbtByteArray>("Blocks")?.Value;
+                    if (secBlocks == null || secBlocks.Length < 4096)
+                        continue;
+
+                    for (int i = 0; i < 4096; i++)
+                    {
+                        if (secBlocks[i] == 0)
+                            continue;
+
+                        nonAir++;
+                        int yInSection = (i >> 8) & 0x0F;
+                        int y = sectionY * 16 + yInSection;
+                        if (y > maxY)
+                            maxY = y;
+                    }
+                }
+            }
+            else
+            {
+                return;
+            }
+
+            if (densestChunk == null || nonAir > densestChunk.Value.nonAir)
+            {
+                densestChunk = new DensestChunk
+                {
+                    chunkX = chunkX,
+                    chunkZ = chunkZ,
+                    nonAir = nonAir,
+                    maxY = maxY,
+                };
+            }
+        }
+        catch
+        {
+        }
+    }
+
+    private readonly struct DensestChunk
+    {
+        public required int chunkX { get; init; }
+        public required int chunkZ { get; init; }
+        public required int nonAir { get; init; }
+        public required int maxY { get; init; }
+    }
+
+    private static byte[] PrepareJavaChunkNbt(byte[] rawNbt, int chunkX, int chunkZ)
+    {
+        try
+        {
+            var file = new NbtFile();
+            file.LoadFromBuffer(rawNbt, 0, rawNbt.Length, NbtCompression.None);
+
+            NbtCompound root = file.RootTag;
+            NbtCompound? level = root.Get<NbtCompound>("Level");
+
+            if (level == null && root.Contains("Blocks"))
+            {
+                level = (NbtCompound)root.Clone();
+                level.Name = "Level";
+                root = new NbtCompound(string.Empty) { level };
+            }
+
+            if (level == null)
+                return rawNbt;
+
+            NbtCompound anvilLevel = BuildAnvilLevel(level, chunkX, chunkZ);
+            var normalized = new NbtFile(new NbtCompound(string.Empty)
+            {
+                new NbtInt("DataVersion", 1343),
+                anvilLevel,
+            });
+            using var ms = new MemoryStream();
+            normalized.SaveToStream(ms, NbtCompression.None);
+            return ms.ToArray();
+        }
+        catch
+        {
+            return rawNbt;
+        }
+    }
+
+    private static NbtCompound BuildAnvilLevel(NbtCompound legacyLevel, int chunkX, int chunkZ)
+    {
+        byte[] oldBlocks = legacyLevel.Get<NbtByteArray>("Blocks")?.Value ?? new byte[32768];
+        byte[] oldData = legacyLevel.Get<NbtByteArray>("Data")?.Value ?? new byte[16384];
+        byte[] oldSky = legacyLevel.Get<NbtByteArray>("SkyLight")?.Value ?? CreateFilledArray(16384, 0xFF);
+        byte[] oldBlockLight = legacyLevel.Get<NbtByteArray>("BlockLight")?.Value ?? new byte[16384];
+
+        var sections = new NbtList("Sections", NbtTagType.Compound);
+        for (int sectionY = 0; sectionY < 8; sectionY++)
+        {
+            byte[] secBlocks = new byte[4096];
+            byte[] secData = new byte[2048];
+            byte[] secSky = new byte[2048];
+            byte[] secBlockLight = new byte[2048];
+
+            bool hasAnyBlock = false;
+            for (int yInSection = 0; yInSection < 16; yInSection++)
+            {
+                int y = sectionY * 16 + yInSection;
+                for (int z = 0; z < 16; z++)
+                {
+                    for (int x = 0; x < 16; x++)
+                    {
+                        int oldIndex = ((x * 16) + z) * 128 + y;
+                        int secIndex = x + z * 16 + yInSection * 256;
+
+                        byte blockId = oldBlocks[oldIndex];
+                        secBlocks[secIndex] = blockId;
+                        if (blockId != 0)
+                            hasAnyBlock = true;
+
+                        SetNibble(secData, secIndex, GetNibble(oldData, oldIndex));
+                        SetNibble(secSky, secIndex, GetNibble(oldSky, oldIndex));
+                        SetNibble(secBlockLight, secIndex, GetNibble(oldBlockLight, oldIndex));
+                    }
+                }
+            }
+
+            if (!hasAnyBlock)
+                continue;
+
+            var section = new NbtCompound(string.Empty)
+            {
+                new NbtByte("Y", (byte)sectionY),
+                new NbtByteArray("Blocks", secBlocks),
+                new NbtByteArray("Data", secData),
+                new NbtByteArray("SkyLight", secSky),
+                new NbtByteArray("BlockLight", secBlockLight),
+            };
+            section.Name = null;
+            sections.Add(section);
+        }
+
+        int[] heightMap = new int[256];
+        byte[] hm = legacyLevel.Get<NbtByteArray>("HeightMap")?.Value ?? new byte[256];
+        for (int i = 0; i < 256; i++)
+            heightMap[i] = hm[i] & 0xFF;
+
+        var entities = legacyLevel.Get<NbtList>("Entities")?.Clone() as NbtList ?? new NbtList("Entities", NbtTagType.Compound);
+        entities.Name = "Entities";
+        var tileEntities = legacyLevel.Get<NbtList>("TileEntities")?.Clone() as NbtList ?? new NbtList("TileEntities", NbtTagType.Compound);
+        tileEntities.Name = "TileEntities";
+
+        return new NbtCompound("Level")
+        {
+            new NbtInt("xPos", chunkX),
+            new NbtInt("zPos", chunkZ),
+            new NbtLong("LastUpdate", legacyLevel.Get<NbtLong>("LastUpdate")?.Value ?? 0),
+            new NbtLong("InhabitedTime", legacyLevel.Get<NbtLong>("InhabitedTime")?.Value ?? 0),
+            new NbtByte("TerrainPopulated", 1),
+            new NbtByte("LightPopulated", 1),
+            new NbtIntArray("HeightMap", heightMap),
+            sections,
+            entities,
+            tileEntities,
+            new NbtLong("RandomSeed", 0),
+        };
+    }
+
+    private static byte[] CreateFilledArray(int size, byte value)
+    {
+        byte[] result = new byte[size];
+        Array.Fill(result, value);
+        return result;
+    }
+
+    private static byte GetNibble(byte[] data, int index)
+    {
+        if (data.Length == 0)
+            return 0;
+
+        int byteIndex = index >> 1;
+        if (byteIndex >= data.Length)
+            return 0;
+
+        byte b = data[byteIndex];
+        return (byte)((index & 1) == 0 ? (b & 0x0F) : ((b >> 4) & 0x0F));
+    }
+
+    private static void SetNibble(byte[] data, int index, byte value)
+    {
+        int byteIndex = index >> 1;
+        if (byteIndex >= data.Length)
+            return;
+
+        if ((index & 1) == 0)
+            data[byteIndex] = (byte)((data[byteIndex] & 0xF0) | (value & 0x0F));
+        else
+            data[byteIndex] = (byte)((data[byteIndex] & 0x0F) | ((value & 0x0F) << 4));
+    }
+
+    private static int ExportPlayers(LceSaveDataReader saveReader, string outputDir)
+    {
+        string playersDir = Path.Combine(outputDir, "players");
+        Directory.CreateDirectory(playersDir);
+
+        int count = 0;
+        foreach (var entry in saveReader.EnumerateEntries())
+        {
+            if (!entry.Name.StartsWith("players/", StringComparison.OrdinalIgnoreCase) || !entry.Name.EndsWith(".dat", StringComparison.OrdinalIgnoreCase))
+                continue;
+
+            if (!saveReader.TryGetFileBytes(entry.Name, out byte[] bytes))
+                continue;
+
+            string filename = Path.GetFileName(entry.Name.Replace('/', Path.DirectorySeparatorChar));
+            File.WriteAllBytes(Path.Combine(playersDir, filename), bytes);
+            count++;
+        }
+
+        return count;
+    }
+
+    private static bool TryMatchRegionEntry(string entryName, string dimension, out int rx, out int rz)
+    {
+        rx = 0;
+        rz = 0;
+
+        string normalized = entryName.Replace('\\', '/');
+
+        string filename = normalized;
+        if (dimension == "overworld")
+        {
+            if (!filename.StartsWith("r.", StringComparison.OrdinalIgnoreCase))
+                return false;
+        }
+        else if (dimension == "nether")
+        {
+            if (filename.StartsWith("DIM-1/", StringComparison.OrdinalIgnoreCase))
+                filename = filename[6..];
+            else if (filename.StartsWith("DIM-1", StringComparison.OrdinalIgnoreCase))
+                filename = filename[5..];
+            else
+                return false;
+        }
+        else if (dimension == "end")
+        {
+            if (filename.StartsWith("DIM1/", StringComparison.OrdinalIgnoreCase))
+                filename = filename[5..];
+            else if (filename.StartsWith("DIM1", StringComparison.OrdinalIgnoreCase))
+                filename = filename[4..];
+            else
+                return false;
+        }
+
+        filename = Path.GetFileName(filename);
+        string[] parts = filename.Split('.');
+        if (parts.Length != 4 || !parts[0].Equals("r", StringComparison.OrdinalIgnoreCase))
+            return false;
+
+        return int.TryParse(parts[1], out rx) && int.TryParse(parts[2], out rz);
     }
 
     private static int FloorDiv(int value, int divisor)

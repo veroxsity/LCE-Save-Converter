@@ -1,7 +1,14 @@
 namespace LceWorldConverter;
 
+public enum ConversionDirection
+{
+    JavaToLce,
+    LceToJava,
+}
+
 public sealed class ConversionOptions
 {
+    public required ConversionDirection Direction { get; init; }
     public required string InputPath { get; init; }
     public required string OutputDirectory { get; init; }
     public required int XzSize { get; init; }
