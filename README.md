@@ -80,10 +80,10 @@ cd LCE-Save-Converter
 dotnet build
 ```
 
-To produce a release build manually:
+To publish a Windows executable manually:
 
 ```bash
-dotnet publish ./LceWorldConverter.csproj -c Release
+dotnet publish ./LceWorldConverter.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true
 ```
 
 Prebuilt binaries, when available, can be downloaded from the GitHub Releases page.
@@ -96,17 +96,31 @@ Prebuilt binaries, when available, can be downloaded from the GitHub Releases pa
 dotnet run -- <java_world_folder> [output_dir] [--large-world] [--all-dimensions]
 ```
 
+Published executable usage:
+
+```powershell
+.\LceWorldConverter.exe <java_world_folder> [output_dir] [--large-world] [--all-dimensions] [--copy-players] [--preserve-entities]
+```
+
 | Argument | Description |
 |---|---|
 | `java_world_folder` | Path to the Java Edition world folder (must contain `level.dat`) |
 | `output_dir` | Optional. Directory to write `saveData.ms` into. Defaults to a folder named after the world in the current directory. |
 | `--large-world` | Use 320-chunk (5120 block) world size instead of the default 54-chunk (864 block) legacy size. |
 | `--all-dimensions` | Also convert Nether and End. By default only Overworld is converted. |
+| `--copy-players` | Import Java `players/*.dat` files when they use numeric filenames. |
+| `--preserve-entities` | Keep chunk entities and tile data instead of stripping them for compatibility. |
 
 Inspect an existing `saveData.ms` container:
 
 ```
 dotnet run -- --inspect <path_to_saveData.ms>
+```
+
+Inspect with the published executable:
+
+```powershell
+.\LceWorldConverter.exe --inspect <path_to_saveData.ms>
 ```
 
 **Examples:**
@@ -129,6 +143,24 @@ dotnet run -- "C:/Users/You/AppData/Roaming/.minecraft/saves/MyWorld" --all-dime
 Convert as a large world and include all dimensions:
 ```
 dotnet run -- "C:/Users/You/AppData/Roaming/.minecraft/saves/MyWorld" "D:/GameHDD/MySlot" --large-world --all-dimensions
+```
+
+Convert with the published Windows executable:
+```powershell
+.\LceWorldConverter.exe "C:\Users\You\AppData\Roaming\.minecraft\saves\MyWorld" "D:\GameHDD\MySlot" --large-world --all-dimensions --copy-players
+```
+
+Example PowerShell script:
+```powershell
+$converter = "C:\Tools\LCE-Save-Converter\LceWorldConverter.exe"
+$javaWorld = "C:\Users\You\AppData\Roaming\.minecraft\saves\MyWorld"
+$outputDir = "D:\GameHDD\MySlot"
+
+& $converter $javaWorld $outputDir --large-world --all-dimensions --copy-players
+
+if ($LASTEXITCODE -ne 0) {
+	throw "Conversion failed."
+}
 ```
 
 Then copy (or drop) the output `saveData.ms` into your LCE server's `GameHDD/<worldname>/` folder.
