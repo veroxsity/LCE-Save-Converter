@@ -1,5 +1,10 @@
 # LCE World Converter
 
+[![Latest Release](https://img.shields.io/github/v/release/veroxsity/LCE-Save-Converter?display_name=tag)](https://github.com/veroxsity/LCE-Save-Converter/releases)
+[![Downloads](https://img.shields.io/github/downloads/veroxsity/LCE-Save-Converter/total)](https://github.com/veroxsity/LCE-Save-Converter/releases)
+[![GitHub Stars](https://img.shields.io/github/stars/veroxsity/LCE-Save-Converter?style=social)](https://github.com/veroxsity/LCE-Save-Converter/stargazers)
+[![.NET 8](https://img.shields.io/badge/.NET-8-512BD4)](https://dotnet.microsoft.com/download/dotnet/8.0)
+
 A C# .NET 8 tool that converts Java Edition Minecraft worlds into the Minecraft Legacy Console Edition (LCE) `saveData.ms` format.
 
 Prior to the LCE source code becoming publicly available, no tool could properly convert worlds **to** LCE format because the `saveData.ms` container and internal chunk storage were completely undocumented. This project changes that.
