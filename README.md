@@ -5,7 +5,7 @@
 [![GitHub Stars](https://img.shields.io/github/stars/veroxsity/LCE-Save-Converter?style=social)](https://github.com/veroxsity/LCE-Save-Converter/stargazers)
 [![.NET 8](https://img.shields.io/badge/.NET-8-512BD4)](https://dotnet.microsoft.com/download/dotnet/8.0)
 
-A C# .NET 8 tool that converts Java Edition Minecraft worlds into the Minecraft Legacy Console Edition (LCE) `saveData.ms` format.
+A C# .NET 8 converter for turning Java Edition Minecraft worlds into the Minecraft Legacy Console Edition (LCE) `saveData.ms` format, with both a CLI and a Windows GUI.
 
 Prior to the LCE source code becoming publicly available, no tool could properly convert worlds **to** LCE format because the `saveData.ms` container and internal chunk storage were completely undocumented. This project changes that.
 
@@ -85,6 +85,12 @@ cd LCE-Save-Converter
 dotnet build
 ```
 
+To build the Windows GUI:
+
+```bash
+dotnet build ./LceWorldConverter.Gui/LceWorldConverter.Gui.csproj
+```
+
 To publish a Windows executable manually:
 
 ```bash
@@ -95,21 +101,33 @@ Prebuilt binaries, when available, can be downloaded from the GitHub Releases pa
 
 ---
 
-## Usage
+## Windows GUI
+
+The repository now includes a Windows desktop app in `LceWorldConverter.Gui/` for the zip-based workflow:
+
+1. Zip your Java world folder.
+2. Launch the GUI build.
+3. Click `Explore...` and pick the world zip.
+4. Choose the output folder.
+5. Click `Convert`.
+
+The GUI extracts the zip to a temporary folder, converts the world, and writes `saveData.ms` into the output folder you selected.
+
+## CLI Usage
 
 ```
-dotnet run -- <java_world_folder> [output_dir] [--world-type <classic|small|medium|large|flat|flat-small|flat-medium|flat-large>] [--all-dimensions]
+dotnet run -- <java_world_folder_or_zip> [output_dir] [--world-type <classic|small|medium|large|flat|flat-small|flat-medium|flat-large>] [--all-dimensions]
 ```
 
 Published executable usage:
 
 ```powershell
-.\LceWorldConverter.exe <java_world_folder> [output_dir] [--world-type <classic|small|medium|large|flat|flat-small|flat-medium|flat-large>] [--all-dimensions] [--copy-players] [--preserve-entities]
+.\LceWorldConverter.exe <java_world_folder_or_zip> [output_dir] [--world-type <classic|small|medium|large|flat|flat-small|flat-medium|flat-large>] [--all-dimensions] [--copy-players] [--preserve-entities]
 ```
 
 | Argument | Description |
 |---|---|
-| `java_world_folder` | Path to the Java Edition world folder (must contain `level.dat`) |
+| `java_world_folder_or_zip` | Path to the Java Edition world folder or a `.zip` archive containing it |
 | `output_dir` | Optional. Directory to write `saveData.ms` into. Defaults to a folder named after the world in the current directory. |
 | `--world-type <...>` | Unified world profile selector (recommended): `classic`, `small`, `medium`, `large`, `flat`, `flat-small`, `flat-medium`, `flat-large`. |
 | `--small-world` | Use 64-chunk (1024 block) world size. |
@@ -144,6 +162,11 @@ dotnet run -- "C:/Users/You/AppData/Roaming/.minecraft/saves/MyWorld"
 Convert into a specific folder (e.g. an LCE save slot):
 ```
 dotnet run -- "C:/Users/You/AppData/Roaming/.minecraft/saves/MyWorld" "D:/GameHDD/MySlot"
+```
+
+Convert from a zipped world export:
+```
+dotnet run -- "C:/Users/You/Desktop/MyWorld.zip" "D:/GameHDD/MySlot"
 ```
 
 Convert Overworld + Nether + End:
