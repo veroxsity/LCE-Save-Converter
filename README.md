@@ -80,42 +80,13 @@ cd LCE-Save-Converter
 dotnet build
 ```
 
-Build release binaries locally for download:
-
-```powershell
-./scripts/Build-ReleaseArtifacts.ps1 -Version v1.0.0
-```
-
-This creates runtime-specific zip files in `release-assets/`.
-Release builds are produced without PDB debug symbol files.
-
----
-
-## Automated GitHub Releases (Tag -> Build -> Publish)
-
-This repo includes a GitHub Actions workflow at `.github/workflows/release.yml`.
-
-When you push a tag that starts with `v` (for example `v1.0.0`), GitHub will:
-
-- Build self-contained single-file binaries
-- Target `win-x64`, `linux-x64`, `osx-x64`, and `osx-arm64`
-- Zip each runtime output
-- Create or update a GitHub Release and upload the zip assets
-
-Create and push a release tag with the helper script:
-
-```powershell
-./scripts/New-ReleaseTag.ps1 -VersionTag v1.0.0
-```
-
-Or do it manually:
+To produce a release build manually:
 
 ```bash
-git tag -a v1.0.0 -m "Release v1.0.0"
-git push origin v1.0.0
+dotnet publish ./LceWorldConverter.csproj -c Release
 ```
 
-After the workflow completes, users can download binaries directly from the GitHub Releases page without building from source.
+Prebuilt binaries, when available, can be downloaded from the GitHub Releases page.
 
 ---
 
