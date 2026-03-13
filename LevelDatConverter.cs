@@ -19,7 +19,13 @@ public static class LevelDatConverter
     /// Reads a Java level.dat and produces an LCE-compatible level.dat as bytes.
     /// spawnChunkX/Z are the Java spawn chunk coords used for recentring.
     /// </summary>
-    public static byte[] Convert(NbtCompound javaRoot, int spawnChunkX, int spawnChunkZ, bool largeWorld, int? overrideSpawnY = null)
+    public static byte[] Convert(
+        NbtCompound javaRoot,
+        int spawnChunkX,
+        int spawnChunkZ,
+        int xzSize,
+        bool flatWorld,
+        int? overrideSpawnY = null)
     {
         var javaData = javaRoot.Get<NbtCompound>("Data");
         if (javaData == null)
@@ -30,7 +36,6 @@ public static class LevelDatConverter
             ?? 0;
         bool isModernWorld = dataVersion >= 1519; // Java 1.13+
 
-        int xzSize = largeWorld ? 320 : 54;
         int hellScale = 3;
 
         // Read original spawn
@@ -52,9 +57,15 @@ public static class LevelDatConverter
 
         // Modern level.dat fields can contain generator names/options unknown to TU19.
         // Use conservative defaults for modern worlds to avoid world-init crashes.
-        string safeGeneratorName = isModernWorld ? "default" : GetString(javaData, "generatorName", "default");
-        int safeGeneratorVersion = isModernWorld ? 1 : GetInt(javaData, "generatorVersion");
-        string safeGeneratorOptions = isModernWorld ? "" : GetString(javaData, "generatorOptions", "");
+        string safeGeneratorName = flatWorld
+            ? "flat"
+            : isModernWorld ? "default" : GetString(javaData, "generatorName", "default");
+        int safeGeneratorVersion = flatWorld
+            ? 0
+            : isModernWorld ? 1 : GetInt(javaData, "generatorVersion");
+        string safeGeneratorOptions = flatWorld
+            ? GetString(javaData, "generatorOptions", "2;7,2x3,2;1;")
+            : isModernWorld ? "" : GetString(javaData, "generatorOptions", "");
 
         // Build the LCE level.dat
         var lceData = new NbtCompound("Data")

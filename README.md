@@ -98,23 +98,29 @@ Prebuilt binaries, when available, can be downloaded from the GitHub Releases pa
 ## Usage
 
 ```
-dotnet run -- <java_world_folder> [output_dir] [--large-world] [--all-dimensions]
+dotnet run -- <java_world_folder> [output_dir] [--world-type <classic|small|medium|large|flat|flat-small|flat-medium|flat-large>] [--all-dimensions]
 ```
 
 Published executable usage:
 
 ```powershell
-.\LceWorldConverter.exe <java_world_folder> [output_dir] [--large-world] [--all-dimensions] [--copy-players] [--preserve-entities]
+.\LceWorldConverter.exe <java_world_folder> [output_dir] [--world-type <classic|small|medium|large|flat|flat-small|flat-medium|flat-large>] [--all-dimensions] [--copy-players] [--preserve-entities]
 ```
 
 | Argument | Description |
 |---|---|
 | `java_world_folder` | Path to the Java Edition world folder (must contain `level.dat`) |
 | `output_dir` | Optional. Directory to write `saveData.ms` into. Defaults to a folder named after the world in the current directory. |
-| `--large-world` | Use 320-chunk (5120 block) world size instead of the default 54-chunk (864 block) legacy size. |
+| `--world-type <...>` | Unified world profile selector (recommended): `classic`, `small`, `medium`, `large`, `flat`, `flat-small`, `flat-medium`, `flat-large`. |
+| `--small-world` | Use 64-chunk (1024 block) world size. |
+| `--medium-world` | Use 192-chunk (3072 block) world size. |
+| `--large-world` | Use 320-chunk (5120 block) world size. |
+| `--flat-world` | Force output world type to flat (`generatorName=flat` in `level.dat`). |
 | `--all-dimensions` | Also convert Nether and End. By default only Overworld is converted. |
 | `--copy-players` | Import Java `players/*.dat` files when they use numeric filenames. |
 | `--preserve-entities` | Keep chunk entities and tile data instead of stripping them for compatibility. |
+
+Note: `--small-world`, `--medium-world`, `--large-world`, and `--flat-world` are kept as legacy aliases. Do not mix them with `--world-type`.
 
 Inspect an existing `saveData.ms` container:
 
@@ -147,12 +153,17 @@ dotnet run -- "C:/Users/You/AppData/Roaming/.minecraft/saves/MyWorld" --all-dime
 
 Convert as a large world and include all dimensions:
 ```
-dotnet run -- "C:/Users/You/AppData/Roaming/.minecraft/saves/MyWorld" "D:/GameHDD/MySlot" --large-world --all-dimensions
+dotnet run -- "C:/Users/You/AppData/Roaming/.minecraft/saves/MyWorld" "D:/GameHDD/MySlot" --world-type large --all-dimensions
+```
+
+Convert as a medium flat world:
+```
+dotnet run -- "C:/Users/You/AppData/Roaming/.minecraft/saves/MyWorld" "D:/GameHDD/MySlot" --world-type flat-medium
 ```
 
 Convert with the published Windows executable:
 ```powershell
-.\LceWorldConverter.exe "C:\Users\You\AppData\Roaming\.minecraft\saves\MyWorld" "D:\GameHDD\MySlot" --large-world --all-dimensions --copy-players
+.\LceWorldConverter.exe "C:\Users\You\AppData\Roaming\.minecraft\saves\MyWorld" "D:\GameHDD\MySlot" --world-type large --all-dimensions --copy-players
 ```
 
 Example PowerShell script:
@@ -161,7 +172,7 @@ $converter = "C:\Tools\LCE-Save-Converter\LceWorldConverter.exe"
 $javaWorld = "C:\Users\You\AppData\Roaming\.minecraft\saves\MyWorld"
 $outputDir = "D:\GameHDD\MySlot"
 
-& $converter $javaWorld $outputDir --large-world --all-dimensions --copy-players
+& $converter $javaWorld $outputDir --world-type large --all-dimensions --copy-players
 
 if ($LASTEXITCODE -ne 0) {
 	throw "Conversion failed."
