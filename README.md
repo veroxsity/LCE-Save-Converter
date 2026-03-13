@@ -6,6 +6,7 @@
 [![.NET 8](https://img.shields.io/badge/.NET-8-512BD4)](https://dotnet.microsoft.com/download/dotnet/8.0)
 
 Convert Java Edition worlds into Minecraft Legacy Console Edition (LCE) `saveData.ms`.
+LCE to Java coming soon!
 
 ## Quick Start (Prebuilt)
 
