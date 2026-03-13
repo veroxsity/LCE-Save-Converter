@@ -1,4 +1,5 @@
 using System.Drawing;
+using System.Drawing.Drawing2D;
 using System.Windows.Forms;
 using LceWorldConverter;
 
@@ -6,6 +7,15 @@ namespace LceWorldConverter.Gui;
 
 internal sealed class MainForm : Form
 {
+    private static readonly Color WindowTop = Color.FromArgb(241, 247, 245);
+    private static readonly Color WindowBottom = Color.FromArgb(225, 238, 233);
+    private static readonly Color CardBg = Color.FromArgb(250, 252, 251);
+    private static readonly Color Border = Color.FromArgb(194, 215, 206);
+    private static readonly Color Accent = Color.FromArgb(17, 119, 92);
+    private static readonly Color AccentHover = Color.FromArgb(22, 137, 106);
+    private static readonly Color HeroText = Color.FromArgb(24, 56, 47);
+    private static readonly Color MutedText = Color.FromArgb(80, 98, 91);
+
     private readonly TextBox _zipPathTextBox;
     private readonly TextBox _outputPathTextBox;
     private readonly ComboBox _worldTypeComboBox;
@@ -21,84 +31,61 @@ internal sealed class MainForm : Form
     {
         Text = "LCE World Converter";
         StartPosition = FormStartPosition.CenterScreen;
-        MinimumSize = new Size(840, 620);
-        Size = new Size(920, 680);
+        MinimumSize = new Size(880, 660);
+        Size = new Size(980, 740);
+        Font = new Font("Bahnschrift", 10F);
+        DoubleBuffered = true;
+        BackColor = WindowTop;
+        SetStyle(ControlStyles.OptimizedDoubleBuffer | ControlStyles.AllPaintingInWmPaint | ControlStyles.ResizeRedraw, true);
 
-        var layout = new TableLayoutPanel
+        var shell = new TableLayoutPanel
         {
             Dock = DockStyle.Fill,
             ColumnCount = 1,
-            RowCount = 6,
-            Padding = new Padding(16),
+            RowCount = 5,
+            Padding = new Padding(26, 20, 26, 20),
+            BackColor = WindowTop,
         };
-        layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-        layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-        layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-        layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-        layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-        layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+        shell.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        shell.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        shell.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        shell.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        shell.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
 
-        var headerLabel = new Label
-        {
-            AutoSize = true,
-            Text = "Pick a zipped Java world, choose an output folder, and convert it into saveData.ms.",
-            Font = new Font(Font, FontStyle.Bold),
-            Margin = new Padding(0, 0, 0, 12),
-        };
-        layout.Controls.Add(headerLabel);
+        shell.Controls.Add(CreateHeroCard());
 
-        _zipPathTextBox = new TextBox { Dock = DockStyle.Fill, ReadOnly = true };
-        layout.Controls.Add(CreatePathRow("World Zip", _zipPathTextBox, "Explore...", BrowseZip));
+        _zipPathTextBox = CreatePathTextBox();
+        _outputPathTextBox = CreatePathTextBox();
+        shell.Controls.Add(CreateInputCard());
 
-        _outputPathTextBox = new TextBox { Dock = DockStyle.Fill, ReadOnly = true };
-        layout.Controls.Add(CreatePathRow("Output Folder", _outputPathTextBox, "Browse...", BrowseOutputFolder));
+        _worldTypeComboBox = CreateWorldTypeComboBox();
+        _allDimensionsCheckBox = CreateOptionCheckBox("Convert Nether and End");
+        _copyPlayersCheckBox = CreateOptionCheckBox("Copy numeric player data");
+        _preserveEntitiesCheckBox = CreateOptionCheckBox("Preserve entities and tile data");
+        shell.Controls.Add(CreateOptionsCard());
 
-        _worldTypeComboBox = new ComboBox
-        {
-            Dock = DockStyle.Fill,
-            DropDownStyle = ComboBoxStyle.DropDownList,
-        };
-        _worldTypeComboBox.Items.AddRange([
-            "classic",
-            "small",
-            "medium",
-            "large",
-            "flat",
-            "flat-small",
-            "flat-medium",
-            "flat-large",
-        ]);
-        _worldTypeComboBox.SelectedItem = "classic";
-
-        _allDimensionsCheckBox = new CheckBox { AutoSize = true, Text = "Convert Nether and End" };
-        _copyPlayersCheckBox = new CheckBox { AutoSize = true, Text = "Copy numeric player data" };
-        _preserveEntitiesCheckBox = new CheckBox { AutoSize = true, Text = "Preserve entities and tile data" };
-
-        layout.Controls.Add(CreateOptionsPanel());
-
-        _convertButton = new Button
-        {
-            AutoSize = true,
-            Text = "Convert",
-            Padding = new Padding(14, 8, 14, 8),
-        };
+        _convertButton = CreatePrimaryButton("Convert");
         _convertButton.Click += ConvertClicked;
 
         _progressBar = new ProgressBar
         {
             Dock = DockStyle.Fill,
+            Height = 20,
             Style = ProgressBarStyle.Blocks,
-            Height = 24,
+            Margin = new Padding(0, 4, 0, 0),
         };
 
         _statusLabel = new Label
         {
             AutoSize = true,
             Text = "Ready",
-            TextAlign = ContentAlignment.MiddleLeft,
+            ForeColor = HeroText,
+            Font = new Font(Font.FontFamily, 9F, FontStyle.Bold),
+            Anchor = AnchorStyles.Left,
+            Margin = new Padding(12, 6, 0, 0),
         };
 
-        layout.Controls.Add(CreateActionPanel());
+        shell.Controls.Add(CreateActionCard());
 
         _logTextBox = new TextBox
         {
@@ -106,67 +93,100 @@ internal sealed class MainForm : Form
             Multiline = true,
             ReadOnly = true,
             ScrollBars = ScrollBars.Vertical,
-            Font = new Font("Consolas", 10F),
+            BorderStyle = BorderStyle.None,
+            BackColor = Color.FromArgb(17, 35, 30),
+            ForeColor = Color.FromArgb(193, 226, 216),
+            Font = new Font("Consolas", 9.5F),
+            Margin = new Padding(6),
         };
-        layout.Controls.Add(_logTextBox);
 
-        Controls.Add(layout);
+        shell.Controls.Add(CreateLogCard());
+        Controls.Add(shell);
     }
 
-    private Control CreatePathRow(string labelText, TextBox textBox, string buttonText, EventHandler onClick)
+    private Control CreateHeroCard()
     {
-        var panel = new TableLayoutPanel
-        {
-            Dock = DockStyle.Top,
-            ColumnCount = 3,
-            AutoSize = true,
-            Margin = new Padding(0, 0, 0, 12),
-        };
-        panel.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 120));
-        panel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-        panel.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 120));
+        var card = CreateCard(new Padding(18, 16, 18, 14));
 
-        var label = new Label
+        var title = new Label
         {
             AutoSize = true,
-            Text = labelText,
-            Anchor = AnchorStyles.Left,
-            Margin = new Padding(0, 6, 12, 0),
+            Text = "LCE World Converter",
+            ForeColor = HeroText,
+            Font = new Font("Bahnschrift SemiBold", 22F, FontStyle.Bold),
         };
-        panel.Controls.Add(label, 0, 0);
-        panel.Controls.Add(textBox, 1, 0);
 
-        var button = new Button
+        var subtitle = new Label
         {
-            Text = buttonText,
+            AutoSize = true,
+            MaximumSize = new Size(860, 0),
+            Margin = new Padding(0, 8, 0, 0),
+            Text = "Select a zipped Java world, choose an output folder, and convert to saveData.ms.",
+            ForeColor = MutedText,
+            Font = new Font("Bahnschrift", 10.5F),
+        };
+
+        var badge = new Label
+        {
+            AutoSize = true,
+            Margin = new Padding(0, 10, 0, 0),
+            Text = "ZIP INPUT • GUI WORKFLOW",
+            ForeColor = Color.White,
+            BackColor = Accent,
+            Padding = new Padding(8, 4, 8, 4),
+            Font = new Font("Bahnschrift", 8.5F, FontStyle.Bold),
+        };
+
+        card.Controls.Add(title);
+        card.Controls.Add(subtitle);
+        card.Controls.Add(badge);
+        return card;
+    }
+
+    private Control CreateInputCard()
+    {
+        var card = CreateCard();
+
+        var layout = new TableLayoutPanel
+        {
             Dock = DockStyle.Fill,
-            Margin = new Padding(12, 0, 0, 0),
+            ColumnCount = 1,
+            RowCount = 2,
+            AutoSize = true,
+            BackColor = Color.Transparent,
         };
-        button.Click += onClick;
-        panel.Controls.Add(button, 2, 0);
+        layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
 
-        return panel;
+        layout.Controls.Add(CreatePathRow("World Zip", _zipPathTextBox, "Explore...", BrowseZip), 0, 0);
+        layout.Controls.Add(CreatePathRow("Output Folder", _outputPathTextBox, "Browse...", BrowseOutputFolder), 0, 1);
+
+        card.Controls.Add(layout);
+        return card;
     }
 
-    private Control CreateOptionsPanel()
+    private Control CreateOptionsCard()
     {
+        var card = CreateCard();
         var panel = new TableLayoutPanel
         {
-            Dock = DockStyle.Top,
+            Dock = DockStyle.Fill,
             ColumnCount = 2,
             AutoSize = true,
-            Margin = new Padding(0, 0, 0, 12),
+            BackColor = CardBg,
         };
-        panel.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 120));
+        panel.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 124));
         panel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
 
         var worldTypeLabel = new Label
         {
             AutoSize = true,
             Text = "World Type",
-            Anchor = AnchorStyles.Left,
-            Margin = new Padding(0, 6, 12, 0),
+            ForeColor = HeroText,
+            Font = new Font("Bahnschrift", 10F, FontStyle.Bold),
+            Margin = new Padding(0, 8, 12, 0),
         };
+
         panel.Controls.Add(worldTypeLabel, 0, 0);
         panel.Controls.Add(_worldTypeComboBox, 1, 0);
 
@@ -176,6 +196,7 @@ internal sealed class MainForm : Form
             AutoSize = true,
             FlowDirection = FlowDirection.LeftToRight,
             WrapContents = true,
+            BackColor = CardBg,
             Margin = new Padding(0, 10, 0, 0),
         };
         checkboxFlow.Controls.Add(_allDimensionsCheckBox);
@@ -185,17 +206,20 @@ internal sealed class MainForm : Form
         panel.Controls.Add(new Label(), 0, 1);
         panel.Controls.Add(checkboxFlow, 1, 1);
 
-        return panel;
+        card.Controls.Add(panel);
+        return card;
     }
 
-    private Control CreateActionPanel()
+    private Control CreateActionCard()
     {
+        var card = CreateCard();
+
         var panel = new TableLayoutPanel
         {
-            Dock = DockStyle.Top,
+            Dock = DockStyle.Fill,
             ColumnCount = 3,
             AutoSize = true,
-            Margin = new Padding(0, 0, 0, 12),
+            BackColor = CardBg,
         };
         panel.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
         panel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
@@ -204,6 +228,176 @@ internal sealed class MainForm : Form
         panel.Controls.Add(_convertButton, 0, 0);
         panel.Controls.Add(_progressBar, 1, 0);
         panel.Controls.Add(_statusLabel, 2, 0);
+
+        card.Controls.Add(panel);
+        return card;
+    }
+
+    private Control CreateLogCard()
+    {
+        var card = CreateCard(new Padding(0), autoSize: false, dock: DockStyle.Fill);
+        card.MinimumSize = new Size(0, 220);
+
+        var header = new Label
+        {
+            Dock = DockStyle.Top,
+            AutoSize = false,
+            Height = 38,
+            Padding = new Padding(14, 10, 0, 0),
+            Text = "Conversion Activity",
+            ForeColor = HeroText,
+            Font = new Font("Bahnschrift", 10F, FontStyle.Bold),
+            BackColor = Color.FromArgb(233, 242, 238),
+        };
+
+        var inner = new Panel
+        {
+            Dock = DockStyle.Fill,
+            Padding = new Padding(10),
+            BackColor = Color.FromArgb(15, 31, 27),
+        };
+        inner.Controls.Add(_logTextBox);
+
+        card.Controls.Add(inner);
+        card.Controls.Add(header);
+        return card;
+    }
+
+    private Panel CreateCard(Padding? contentPadding = null, bool autoSize = true, DockStyle dock = DockStyle.Top)
+    {
+        var card = new Panel
+        {
+            Dock = dock,
+            AutoSize = autoSize,
+            Margin = new Padding(0, 0, 0, 12),
+            Padding = contentPadding ?? new Padding(16, 14, 16, 14),
+            BackColor = CardBg,
+            BorderStyle = BorderStyle.FixedSingle,
+        };
+
+        return card;
+    }
+
+    private TextBox CreatePathTextBox()
+    {
+        return new TextBox
+        {
+            Dock = DockStyle.Fill,
+            ReadOnly = true,
+            BorderStyle = BorderStyle.FixedSingle,
+            BackColor = Color.White,
+            ForeColor = HeroText,
+            Margin = new Padding(0),
+        };
+    }
+
+    private ComboBox CreateWorldTypeComboBox()
+    {
+        var combo = new ComboBox
+        {
+            Dock = DockStyle.Fill,
+            DropDownStyle = ComboBoxStyle.DropDownList,
+            FlatStyle = FlatStyle.Flat,
+            BackColor = Color.White,
+            ForeColor = HeroText,
+            Margin = new Padding(0),
+        };
+
+        combo.Items.AddRange([
+            "classic",
+            "small",
+            "medium",
+            "large",
+            "flat",
+            "flat-small",
+            "flat-medium",
+            "flat-large",
+        ]);
+        combo.SelectedItem = "classic";
+        return combo;
+    }
+
+    private static CheckBox CreateOptionCheckBox(string text)
+    {
+        return new CheckBox
+        {
+            AutoSize = true,
+            Text = text,
+            ForeColor = HeroText,
+            Font = new Font("Bahnschrift", 9.5F),
+            Margin = new Padding(0, 4, 18, 4),
+        };
+    }
+
+    private Button CreatePrimaryButton(string text)
+    {
+        var button = new Button
+        {
+            Text = text,
+            AutoSize = true,
+            FlatStyle = FlatStyle.Flat,
+            ForeColor = Color.White,
+            BackColor = Accent,
+            Padding = new Padding(18, 10, 18, 10),
+            Margin = new Padding(0),
+            Cursor = Cursors.Hand,
+        };
+        button.FlatAppearance.BorderSize = 0;
+
+        button.MouseEnter += (_, _) =>
+        {
+            if (button.Enabled)
+                button.BackColor = AccentHover;
+        };
+        button.MouseLeave += (_, _) =>
+        {
+            button.BackColor = button.Enabled ? Accent : Color.FromArgb(145, 150, 148);
+        };
+
+        return button;
+    }
+
+    private Control CreatePathRow(string labelText, TextBox textBox, string buttonText, EventHandler onClick)
+    {
+        var panel = new TableLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            ColumnCount = 3,
+            AutoSize = false,
+            Height = 36,
+            Margin = new Padding(0, 0, 0, 10),
+            BackColor = CardBg,
+        };
+        panel.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 124));
+        panel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        panel.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 132));
+
+        var label = new Label
+        {
+            AutoSize = true,
+            Text = labelText,
+            ForeColor = HeroText,
+            Font = new Font("Bahnschrift", 10F, FontStyle.Bold),
+            Margin = new Padding(0, 8, 10, 0),
+        };
+
+        var button = new Button
+        {
+            Text = buttonText,
+            Dock = DockStyle.Fill,
+            FlatStyle = FlatStyle.Flat,
+            BackColor = Color.FromArgb(236, 246, 241),
+            ForeColor = HeroText,
+            Cursor = Cursors.Hand,
+            Margin = new Padding(12, 0, 0, 0),
+        };
+        button.FlatAppearance.BorderColor = Border;
+        button.FlatAppearance.BorderSize = 1;
+        button.Click += onClick;
+
+        panel.Controls.Add(label, 0, 0);
+        panel.Controls.Add(textBox, 1, 0);
+        panel.Controls.Add(button, 2, 0);
 
         return panel;
     }
@@ -362,6 +556,7 @@ internal sealed class MainForm : Form
         _preserveEntitiesCheckBox.Enabled = !isBusy;
         _statusLabel.Text = status;
         _progressBar.Style = isBusy ? ProgressBarStyle.Marquee : ProgressBarStyle.Blocks;
+        _convertButton.BackColor = _convertButton.Enabled ? Accent : Color.FromArgb(145, 150, 148);
     }
 
     private void AppendLog(string message)
