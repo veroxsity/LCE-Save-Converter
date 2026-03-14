@@ -12,6 +12,7 @@ internal sealed class MainForm : Form
 
     private readonly TextBox _javaInputTextBox;
     private readonly TextBox _javaOutputTextBox;
+    private readonly ContextMenuStrip _javaInputBrowseMenu;
     private readonly ComboBox _javaWorldTypeComboBox;
     private readonly CheckBox _javaAllDimensionsCheckBox;
     private readonly CheckBox _javaCopyPlayersCheckBox;
@@ -31,8 +32,8 @@ internal sealed class MainForm : Form
     {
         Text = "LCE World Converter";
         StartPosition = FormStartPosition.CenterScreen;
-        MinimumSize = new Size(800, 600);
-        Size = new Size(800, 600);
+        MinimumSize = new Size(1000, 720);
+        Size = new Size(1100, 760);
         Font = new Font("Bahnschrift", 10F);
 
         var shell = new TableLayoutPanel
@@ -56,6 +57,9 @@ internal sealed class MainForm : Form
 
         _javaInputTextBox = CreatePathTextBox();
         _javaOutputTextBox = CreatePathTextBox();
+        _javaInputBrowseMenu = new ContextMenuStrip();
+        _javaInputBrowseMenu.Items.Add("Select Folder", null, (_, _) => BrowseJavaFolder());
+        _javaInputBrowseMenu.Items.Add("Select Zip", null, (_, _) => BrowseJavaZip());
         _javaWorldTypeComboBox = CreateWorldTypeComboBox();
         _javaAllDimensionsCheckBox = CreateCheckBox("Convert Nether and End");
         _javaCopyPlayersCheckBox = CreateCheckBox("Copy numeric player data");
@@ -374,20 +378,13 @@ internal sealed class MainForm : Form
 
     private void BrowseJavaInput(object? sender, EventArgs e)
     {
-        var menu = new ContextMenuStrip();
-        menu.Items.Add("Select Folder", null, (_, _) => BrowseJavaFolder());
-        menu.Items.Add("Select Zip", null, (_, _) => BrowseJavaZip());
-
-        // Keep the menu alive until it closes; disposing immediately prevents it from rendering reliably.
-        menu.Closed += (_, _) => menu.Dispose();
-
         if (sender is Control sourceControl)
         {
-            menu.Show(sourceControl, new Point(0, sourceControl.Height));
+            _javaInputBrowseMenu.Show(sourceControl, new Point(0, sourceControl.Height));
             return;
         }
 
-        menu.Show(Cursor.Position);
+        _javaInputBrowseMenu.Show(Cursor.Position);
     }
 
     private void BrowseJavaFolder()
