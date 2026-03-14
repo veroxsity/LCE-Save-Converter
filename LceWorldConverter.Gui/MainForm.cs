@@ -374,9 +374,19 @@ internal sealed class MainForm : Form
 
     private void BrowseJavaInput(object? sender, EventArgs e)
     {
-        using var menu = new ContextMenuStrip();
+        var menu = new ContextMenuStrip();
         menu.Items.Add("Select Folder", null, (_, _) => BrowseJavaFolder());
         menu.Items.Add("Select Zip", null, (_, _) => BrowseJavaZip());
+
+        // Keep the menu alive until it closes; disposing immediately prevents it from rendering reliably.
+        menu.Closed += (_, _) => menu.Dispose();
+
+        if (sender is Control sourceControl)
+        {
+            menu.Show(sourceControl, new Point(0, sourceControl.Height));
+            return;
+        }
+
         menu.Show(Cursor.Position);
     }
 
