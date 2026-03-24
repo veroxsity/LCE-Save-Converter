@@ -13,7 +13,7 @@
   <img src="https://img.shields.io/github/downloads/veroxsity/LCE-Save-Converter/total?style=flat-square&label=Downloads" alt="Downloads" />
 </p>
 
-Convert Java Edition worlds into Minecraft Legacy Console Edition (LCE) `saveData.ms`, and convert LCE saves back to Java world folders.
+Convert Java Edition worlds into Minecraft Legacy Console Edition (LCE) `saveData.ms`, and convert LCE saves back to Java world folders reversably.
 
 ## Workspace Role
 
