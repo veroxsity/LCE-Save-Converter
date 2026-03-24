@@ -1,11 +1,25 @@
-# LCE World Converter
+# LCE Save Converter
 
-[![Latest Release](https://img.shields.io/github/v/release/veroxsity/LCE-Save-Converter?display_name=tag)](https://github.com/veroxsity/LCE-Save-Converter/releases)
-[![Downloads](https://img.shields.io/github/downloads/veroxsity/LCE-Save-Converter/total)](https://github.com/veroxsity/LCE-Save-Converter/releases)
-[![GitHub Stars](https://img.shields.io/github/stars/veroxsity/LCE-Save-Converter?style=social)](https://github.com/veroxsity/LCE-Save-Converter/stargazers)
-[![.NET 8](https://img.shields.io/badge/.NET-8-512BD4)](https://dotnet.microsoft.com/download/dotnet/8.0)
+<p align="center">
+  <img src="https://img.shields.io/github/license/veroxsity/LCE-Save-Converter?style=for-the-badge" alt="License" />
+  <img src="https://img.shields.io/github/last-commit/veroxsity/LCE-Save-Converter?style=for-the-badge" alt="Last Commit" />
+  <img src="https://img.shields.io/github/repo-size/veroxsity/LCE-Save-Converter?style=for-the-badge" alt="Repo Size" />
+</p>
+
+<p align="center">
+  <img src="https://img.shields.io/badge/.NET-8-512BD4?style=flat-square&logo=dotnet" alt=".NET 8" />
+  <img src="https://img.shields.io/badge/Platform-Windows-0078D6?style=flat-square&logo=windows" alt="Windows" />
+  <img src="https://img.shields.io/github/v/release/veroxsity/LCE-Save-Converter?style=flat-square&label=Release" alt="Release" />
+  <img src="https://img.shields.io/github/downloads/veroxsity/LCE-Save-Converter/total?style=flat-square&label=Downloads" alt="Downloads" />
+</p>
 
 Convert Java Edition worlds into Minecraft Legacy Console Edition (LCE) `saveData.ms`, and convert LCE saves back to Java world folders.
+
+## Workspace Role
+
+- Use `saveconverter` to move Java Edition worlds onto an `LCEServer` instance or into a client save slot
+- Use it in reverse to recover LCE saves back to Java Edition world folders
+- Pair it with `LCEServer` and `LCEClient`/`LCEDebug` for end-to-end world testing
 
 ## Quick Start (Prebuilt)
 
@@ -89,6 +103,15 @@ Legacy Java->LCE positional mode still exists: `.\LceWorldConverter.exe <java_wo
 ## Technical Docs
 
 Full format notes, source references, and conversion internals are in [CONVERTER_DOCS.md](CONVERTER_DOCS.md).
+
+## Related Repositories
+
+- Hub repo: https://github.com/veroxsity/MinecraftLCE
+- Bridge repo: https://github.com/veroxsity/LCEBridge
+- Client repo: https://github.com/veroxsity/LCEClient
+- Debug client repo: https://github.com/veroxsity/LCEDebug
+- Launcher repo: https://github.com/veroxsity/LCELauncher
+- Server repo: https://github.com/veroxsity/LCEServer
 
 ## Build From Source (Optional)
 
