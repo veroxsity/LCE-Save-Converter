@@ -26,6 +26,7 @@ public static class ChunkConverter
 
     public static void ResetUnknownModernBlocks()
     {
+        _globalModernSectionShift = null;
         _unknownModernBlocks.Clear();
     }
 
@@ -1509,8 +1510,24 @@ public static class ChunkConverter
             case "peony":
             case "tall_grass":
             case "large_fern":
-                block = new LegacyBlockState(31, 1);
+            {
+                if (GetProperty(properties, "half") == "upper")
+                {
+                    block = new LegacyBlockState(0, 0);
+                    return true;
+                }
+
+                block = name switch
+                {
+                    "sunflower" => new LegacyBlockState(37, 0),
+                    "rose_bush" => new LegacyBlockState(38, 0),
+                    "lilac" => new LegacyBlockState(38, 0),
+                    "peony" => new LegacyBlockState(38, 0),
+                    "large_fern" => new LegacyBlockState(31, 2),
+                    _ => new LegacyBlockState(31, 1),
+                };
                 return true;
+            }
         }
 
         string? type = GetProperty(properties, "type");
@@ -1551,8 +1568,26 @@ public static class ChunkConverter
 
         if (name == "tall_grass")
         {
+            if (GetProperty(properties, "half") == "upper")
+            {
+                block = new LegacyBlockState(0, 0);
+                return true;
+            }
+
             string grassType = GetProperty(properties, "type");
             block = new LegacyBlockState(31, (byte)(grassType == "fern" ? 2 : 1));
+            return true;
+        }
+
+        if (name == "large_fern")
+        {
+            if (GetProperty(properties, "half") == "upper")
+            {
+                block = new LegacyBlockState(0, 0);
+                return true;
+            }
+
+            block = new LegacyBlockState(31, 2);
             return true;
         }
 

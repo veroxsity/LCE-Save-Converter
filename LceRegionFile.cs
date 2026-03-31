@@ -128,11 +128,24 @@ public class LceRegionFile
 
             NbtCompound root = file.RootTag;
             NbtCompound? level = root.Get<NbtCompound>("Level");
+            if (level == null && root.Contains("Blocks"))
+            {
+                level = (NbtCompound)root.Clone();
+                level.Name = "Level";
+                root = new NbtCompound(string.Empty) { level };
+                file = new NbtFile(root);
+            }
+
             if (level == null)
                 return Array.Empty<byte>();
 
             UpsertTag(level, new NbtInt("xPos", expectedChunkX));
             UpsertTag(level, new NbtInt("zPos", expectedChunkZ));
+
+            int actualChunkX = level.Get<NbtInt>("xPos")?.Value ?? int.MinValue;
+            int actualChunkZ = level.Get<NbtInt>("zPos")?.Value ?? int.MinValue;
+            if (actualChunkX != expectedChunkX || actualChunkZ != expectedChunkZ)
+                return Array.Empty<byte>();
 
             using var output = new MemoryStream();
             file.SaveToStream(output, NbtCompression.None);

@@ -58,8 +58,8 @@ public sealed class LceWorldConversionService
         int spawnX = javaData.Get<NbtInt>("SpawnX")?.Value ?? 0;
         int spawnZ = javaData.Get<NbtInt>("SpawnZ")?.Value ?? 0;
         int spawnY = javaData.Get<NbtInt>("SpawnY")?.Value ?? 64;
-        int spawnChunkX = spawnX >> 4;
-        int spawnChunkZ = spawnZ >> 4;
+        int spawnChunkX = FloorDiv(spawnX, 16);
+        int spawnChunkZ = FloorDiv(spawnZ, 16);
 
         logger.Info($"Java spawn:  ({spawnX}, {spawnZ}) -> chunk ({spawnChunkX}, {spawnChunkZ})");
         logger.Info($"Recentring:  Java chunk ({spawnChunkX},{spawnChunkZ}) -> LCE chunk (0,0)");
@@ -701,8 +701,8 @@ public sealed class LceWorldConversionService
     {
         try
         {
-            int regionX = spawnChunkX >> 5;
-            int regionZ = spawnChunkZ >> 5;
+            int regionX = FloorDiv(spawnChunkX, 32);
+            int regionZ = FloorDiv(spawnChunkZ, 32);
             string? regionPath = reader.GetRegionFiles(string.Empty)
                 .FirstOrDefault(region => region.rx == regionX && region.rz == regionZ)
                 .path;
@@ -880,8 +880,8 @@ public sealed class LceWorldConversionService
                 int jx = lcx + offsetChunkX;
                 int jz = lcz + offsetChunkZ;
 
-                int jrx = jx >> 5;
-                int jrz = jz >> 5;
+                int jrx = FloorDiv(jx, 32);
+                int jrz = FloorDiv(jz, 32);
 
                 if (!regionLookup.TryGetValue((jrx, jrz), out string? regionPath))
                     continue;
@@ -916,8 +916,8 @@ public sealed class LceWorldConversionService
                     throw;
                 }
 
-                int lrx = lcx >> 5;
-                int lrz = lcz >> 5;
+                int lrx = FloorDiv(lcx, 32);
+                int lrz = FloorDiv(lcz, 32);
 
                 if (!lceRegions.TryGetValue((lrx, lrz), out LceRegionFile? lceRegion))
                 {
