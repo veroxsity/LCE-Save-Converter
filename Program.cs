@@ -40,6 +40,44 @@ internal static class Program
             return 0;
         }
 
+        if (args.Length > 0 && args[0] == "--inspect-lce-chunk")
+        {
+            if (args.Length < 4
+                || !int.TryParse(args[2], out int chunkX)
+                || !int.TryParse(args[3], out int chunkZ))
+            {
+                Console.WriteLine("Usage: LceWorldConverter --inspect-lce-chunk <saveData.ms_path> <chunk_x> <chunk_z> [overworld|nether|end]");
+                return 1;
+            }
+
+            SaveDataInspector.InspectLceChunk(args[1], chunkX, chunkZ, args.Length > 4 ? args[4] : "overworld");
+            return 0;
+        }
+
+        if (args.Length > 0 && args[0] == "--scan-lce-coordinates")
+        {
+            if (args.Length < 2)
+            {
+                Console.WriteLine("Usage: LceWorldConverter --scan-lce-coordinates <saveData.ms_path> [overworld|nether|end]");
+                return 1;
+            }
+
+            SaveDataInspector.ScanLceCoordinates(args[1], args.Length > 2 ? args[2] : "overworld");
+            return 0;
+        }
+
+        if (args.Length > 0 && args[0] == "--scan-lce-trailing-nbt")
+        {
+            if (args.Length < 2)
+            {
+                Console.WriteLine("Usage: LceWorldConverter --scan-lce-trailing-nbt <saveData.ms_path> [overworld|nether|end]");
+                return 1;
+            }
+
+            SaveDataInspector.ScanLceTrailingNbt(args[1], args.Length > 2 ? args[2] : "overworld");
+            return 0;
+        }
+
         Console.WriteLine("=== LCE World Converter ===");
         Console.WriteLine("Converts Java Edition worlds <-> Minecraft Legacy Console Edition saveData.ms files.\n");
 

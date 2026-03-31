@@ -37,19 +37,20 @@ public static class ChunkConverter
 
     public static byte[] ConvertChunk(NbtCompound rootTag, int newChunkX, int newChunkZ)
     {
-        bool hasLegacyLevelWrapper = rootTag.Get<NbtCompound>("Level") != null;
-        int dataVersion = rootTag.Get<NbtInt>("DataVersion")?.Value
-            ?? rootTag.Get<NbtCompound>("Level")?.Get<NbtInt>("DataVersion")?.Value
-            ?? 0;
+        return LceChunkPayloadCodec.EncodeLegacyNbt(BuildLegacyChunkLevel(rootTag, newChunkX, newChunkZ));
+    }
+
+    public static byte[] ConvertChunkForSave(NbtCompound rootTag, int newChunkX, int newChunkZ)
+    {
+        return LceChunkPayloadCodec.EncodeCompressedStorage(BuildLegacyChunkLevel(rootTag, newChunkX, newChunkZ));
+    }
+
+    private static NbtCompound BuildLegacyChunkLevel(NbtCompound rootTag, int newChunkX, int newChunkZ)
+    {
+        JavaChunkFormatInfo formatInfo = JavaChunkFormatHelper.Inspect(rootTag);
         var sourceLevel = rootTag.Get<NbtCompound>("Level") ?? rootTag;
-
-        // 1.13+ worlds use modern block/entity schemas even when some chunks still keep a Level wrapper
-        // or have missing DataVersion tags in individual chunks.
-        bool isModernChunkLayout = !hasLegacyLevelWrapper
-            || dataVersion >= 1519
-            || HasModernChunkSchema(sourceLevel);
-
-        bool isAnvil = sourceLevel.Contains("Sections") || sourceLevel.Contains("sections");
+        bool usesModernContentSchema = formatInfo.UsesModernContentSchema;
+        bool isAnvil = formatInfo.IsSectionBased;
 
         byte[] blocks;
         byte[] data;
@@ -57,7 +58,7 @@ public static class ChunkConverter
         byte[] blockLight;
         if (isAnvil)
         {
-            FlattenAnvilSections(sourceLevel, isModernChunkLayout, out blocks, out data, out skyLight, out blockLight);
+            FlattenAnvilSections(sourceLevel, formatInfo, out blocks, out data, out skyLight, out blockLight);
         }
         else
         {
@@ -70,7 +71,7 @@ public static class ChunkConverter
         byte[] heightMap = GetByteArrayOrDefault(sourceLevel, "HeightMap", HEIGHTMAP_SIZE);
         byte[] biomes = GetByteArrayOrDefault(sourceLevel, "Biomes", BIOMES_SIZE);
 
-        if (isModernChunkLayout)
+        if (usesModernContentSchema)
         {
             // Modern biome IDs can be out-of-range for TU19. Use a safe default biome.
             Array.Fill(biomes, (byte)1); // Plains
@@ -109,7 +110,7 @@ public static class ChunkConverter
 
         // Modern Java chunks (1.13+) often contain entity/tile-entity data that is not
         // compatible with TU19 deserializers. Writing empty lists is safer than crashing.
-        var entities = (PreserveDynamicChunkData && !isModernChunkLayout)
+        var entities = (PreserveDynamicChunkData && !usesModernContentSchema)
             ? (NbtList)CloneOrEmptyList(sourceLevel, "Entities")
             : new NbtList("Entities", NbtTagType.Compound);
         if (PreserveDynamicChunkData)
@@ -120,7 +121,9 @@ public static class ChunkConverter
         }
         level.Add(entities);
 
-        var tileEntities = BuildCompatibleTileEntities(sourceLevel, isModernChunkLayout);
+        var tileEntities = PreserveDynamicChunkData
+            ? BuildCompatibleTileEntities(sourceLevel, usesModernContentSchema)
+            : new NbtList("TileEntities", NbtTagType.Compound);
         tileEntities.Name = "TileEntities";
         RemoveUnsupportedTileEntities(tileEntities);
         if (PreserveDynamicChunkData)
@@ -128,13 +131,9 @@ public static class ChunkConverter
             SanitizeLegacyItemStacks(tileEntities);
             RemapTileEntityPositions(tileEntities, blockOffsetX, blockOffsetZ);
         }
-        else
-        {
-            RemapTileEntityPositions(tileEntities, blockOffsetX, blockOffsetZ);
-        }
         level.Add(tileEntities);
 
-        if (PreserveDynamicChunkData && !isModernChunkLayout && (sourceLevel.Contains("TileTicks") || sourceLevel.Contains("block_ticks")))
+        if (PreserveDynamicChunkData && !usesModernContentSchema && (sourceLevel.Contains("TileTicks") || sourceLevel.Contains("block_ticks")))
         {
             var tileTicks = CloneListOrEmpty(sourceLevel, "TileTicks", "block_ticks");
             tileTicks.Name = "TileTicks";
@@ -142,12 +141,7 @@ public static class ChunkConverter
             level.Add(tileTicks);
         }
 
-        var root = new NbtCompound("") { level };
-        var file = new NbtFile(root);
-
-        using var ms = new MemoryStream();
-        file.SaveToStream(ms, NbtCompression.None);
-        return ms.ToArray();
+        return level;
     }
 
     private static NbtTag CloneOrEmptyList(NbtCompound sourceLevel, string name)
@@ -222,31 +216,9 @@ public static class ChunkConverter
         return result;
     }
 
-    private static bool HasModernChunkSchema(NbtCompound level)
-    {
-        if (level.Contains("block_entities") || level.Contains("entities"))
-            return true;
-
-        var sections = level.Get<NbtList>("sections") ?? level.Get<NbtList>("Sections");
-        if (sections == null)
-            return false;
-
-        foreach (NbtTag sectionTag in sections)
-        {
-            if (sectionTag is not NbtCompound section)
-                continue;
-
-            // Post-flattening chunk formats use block_states (1.18+) or Palette/BlockStates (1.13-1.17).
-            if (section.Contains("block_states") || section.Contains("Palette") || section.Contains("BlockStates"))
-                return true;
-        }
-
-        return false;
-    }
-
     private static void FlattenAnvilSections(
         NbtCompound level,
-        bool isModernChunkLayout,
+        JavaChunkFormatInfo formatInfo,
         out byte[] blocks,
         out byte[] data,
         out byte[] skyLight,
@@ -266,7 +238,10 @@ public static class ChunkConverter
         {
             if (sectionTag is not NbtCompound section) continue;
 
-            int sectionY = section.Get<NbtByte>("Y")?.Value ?? -1;
+            int? sectionY = JavaChunkFormatHelper.ReadSectionY(section);
+            if (!sectionY.HasValue)
+                continue;
+
             if (!TryDecodeSectionBlocks(section, out byte[] sBlocks, out byte[] sData))
                 continue;
 
@@ -275,7 +250,7 @@ public static class ChunkConverter
 
             decodedSections.Add(new DecodedSection
             {
-                SectionY = sectionY,
+                SectionY = sectionY.Value,
                 Blocks = sBlocks,
                 Data = sData,
                 SkyLight = sSky,
@@ -287,9 +262,9 @@ public static class ChunkConverter
         if (decodedSections.Count == 0) return;
 
         int sectionShift = 0;
-        if (isModernChunkLayout)
+        if (formatInfo.RequiresSectionShift)
         {
-            // Pick the modern shift once so adjacent chunks don't end up at different elevations.
+            // Pick the extended-height shift once so adjacent chunks don't end up at different elevations.
             if (_globalModernSectionShift == null)
             {
                 int anchorSectionY = decodedSections

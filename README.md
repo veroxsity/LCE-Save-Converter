@@ -70,7 +70,9 @@ Drop `saveData.ms` into your server world folder (for example `GameHDD/<worldnam
 |---|---|---|
 | 1.6.4 | McRegion `.mcr` | Near 1:1 conversion |
 | 1.7 - 1.12.2 | Anvil `.mca` | Minor remapping / flattening |
-| 1.13+ | Anvil `.mca` | Full modern block remapping path |
+| 1.13 - 1.17 | Anvil `.mca` | Palette chunk remapping path |
+| 1.18+ | Anvil `.mca` | Extended-height remapping path |
+| Upgraded / mixed worlds | `.mca` | Chunk format is detected per chunk, not assumed per world |
 
 ## Flags
 

@@ -1,0 +1,247 @@
+<Window x:Class="LceWorldConverter.Gui.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        mc:Ignorable="d"
+        Title="LCE World Converter"
+        Width="1480"
+        Height="940"
+        MinWidth="1240"
+        MinHeight="820"
+        Background="#F2F6F3"
+        WindowStartupLocation="CenterScreen">
+    <Window.Resources>
+        <SolidColorBrush x:Key="CardBorderBrush" Color="#D6E0DA"/>
+        <SolidColorBrush x:Key="AccentBrush" Color="#15745C"/>
+        <SolidColorBrush x:Key="AccentSoftBrush" Color="#E5F1EC"/>
+        <SolidColorBrush x:Key="TitleBrush" Color="#18352D"/>
+        <SolidColorBrush x:Key="BodyBrush" Color="#4D6059"/>
+        <SolidColorBrush x:Key="MutedBrush" Color="#6C7C76"/>
+        <SolidColorBrush x:Key="StepDotBrush" Color="#C8D4CF"/>
+        <SolidColorBrush x:Key="LogBackgroundBrush" Color="#0F1F1B"/>
+        <SolidColorBrush x:Key="LogTextBrush" Color="#CDE8DF"/>
+
+        <Style x:Key="PrimaryButtonStyle" TargetType="Button">
+            <Setter Property="Background" Value="{StaticResource AccentBrush}"/>
+            <Setter Property="Foreground" Value="White"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Padding" Value="18,10"/>
+            <Setter Property="Margin" Value="0,0,12,0"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border Background="{TemplateBinding Background}" CornerRadius="8">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" Margin="{TemplateBinding Padding}"/>
+                        </Border>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+            <Style.Triggers>
+                <Trigger Property="IsEnabled" Value="False">
+                    <Setter Property="Opacity" Value="0.6"/>
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+
+        <Style x:Key="SecondaryButtonStyle" TargetType="Button">
+            <Setter Property="Background" Value="White"/>
+            <Setter Property="Foreground" Value="{StaticResource TitleBrush}"/>
+            <Setter Property="BorderBrush" Value="{StaticResource CardBorderBrush}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="Padding" Value="14,9"/>
+            <Setter Property="Margin" Value="0,0,12,0"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="8">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" Margin="{TemplateBinding Padding}"/>
+                        </Border>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="CardBorderStyle" TargetType="Border">
+            <Setter Property="Background" Value="White"/>
+            <Setter Property="BorderBrush" Value="{StaticResource CardBorderBrush}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="CornerRadius" Value="18"/>
+            <Setter Property="Padding" Value="24,20"/>
+            <Setter Property="Margin" Value="0,0,0,16"/>
+            <Setter Property="SnapsToDevicePixels" Value="True"/>
+        </Style>
+
+        <Style x:Key="SectionTitleStyle" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="13"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Foreground" Value="{StaticResource TitleBrush}"/>
+            <Setter Property="Margin" Value="0,0,0,6"/>
+        </Style>
+
+        <Style x:Key="BodyTextStyle" TargetType="TextBlock">
+            <Setter Property="Foreground" Value="{StaticResource BodyBrush}"/>
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="TextWrapping" Value="Wrap"/>
+        </Style>
+
+        <Style x:Key="LabelTextStyle" TargetType="TextBlock">
+            <Setter Property="Foreground" Value="{StaticResource TitleBrush}"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Margin" Value="0,0,0,4"/>
+        </Style>
+
+        <Style x:Key="HintTextStyle" TargetType="TextBlock">
+            <Setter Property="Foreground" Value="{StaticResource MutedBrush}"/>
+            <Setter Property="FontSize" Value="11.5"/>
+            <Setter Property="TextWrapping" Value="Wrap"/>
+            <Setter Property="Margin" Value="0,0,0,8"/>
+        </Style>
+
+        <Style x:Key="PathTextBoxStyle" TargetType="TextBox">
+            <Setter Property="Height" Value="36"/>
+            <Setter Property="VerticalContentAlignment" Value="Center"/>
+            <Setter Property="Padding" Value="10,0"/>
+            <Setter Property="Margin" Value="0,0,12,0"/>
+            <Setter Property="BorderBrush" Value="{StaticResource CardBorderBrush}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+        </Style>
+    </Window.Resources>
+
+    <Grid Margin="28,24">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <Grid Grid.Row="0" Margin="0,0,0,20">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+            <StackPanel>
+                <TextBlock Text="LCE World Converter" Foreground="{StaticResource MutedBrush}" FontSize="11" FontWeight="SemiBold" Margin="0,0,0,4"/>
+                <TextBlock x:Name="StepTitleText" Text="Choose Direction" Foreground="{StaticResource TitleBrush}" FontSize="18" FontWeight="Bold" Margin="0,0,0,4"/>
+                <TextBlock x:Name="StepSubtitleText" Text="Choose what kind of conversion you want to run." Style="{StaticResource BodyTextStyle}"/>
+            </StackPanel>
+            <Border Grid.Column="1" Padding="10,5" Background="{StaticResource AccentSoftBrush}" CornerRadius="8" VerticalAlignment="Top">
+                <TextBlock Text="WPF Wizard" Foreground="{StaticResource AccentBrush}" FontWeight="SemiBold"/>
+            </Border>
+        </Grid>
+
+        <UniformGrid Grid.Row="1" Columns="3" Margin="0,0,0,18">
+            <StackPanel Orientation="Horizontal">
+                <Border x:Name="Step0Badge" Width="30" Height="30" CornerRadius="15" Background="{StaticResource StepDotBrush}" Margin="0,0,10,0">
+                    <TextBlock Text="1" HorizontalAlignment="Center" VerticalAlignment="Center" FontWeight="SemiBold" Foreground="{StaticResource TitleBrush}"/>
+                </Border>
+                <TextBlock Text="Direction" VerticalAlignment="Center" Foreground="{StaticResource TitleBrush}" FontWeight="SemiBold"/>
+            </StackPanel>
+            <StackPanel Orientation="Horizontal">
+                <Border x:Name="Step1Badge" Width="30" Height="30" CornerRadius="15" Background="{StaticResource StepDotBrush}" Margin="0,0,10,0">
+                    <TextBlock Text="2" HorizontalAlignment="Center" VerticalAlignment="Center" FontWeight="SemiBold" Foreground="{StaticResource TitleBrush}"/>
+                </Border>
+                <TextBlock Text="Options" VerticalAlignment="Center" Foreground="{StaticResource TitleBrush}" FontWeight="SemiBold"/>
+            </StackPanel>
+            <StackPanel Orientation="Horizontal">
+                <Border x:Name="Step2Badge" Width="30" Height="30" CornerRadius="15" Background="{StaticResource StepDotBrush}" Margin="0,0,10,0">
+                    <TextBlock Text="3" HorizontalAlignment="Center" VerticalAlignment="Center" FontWeight="SemiBold" Foreground="{StaticResource TitleBrush}"/>
+                </Border>
+                <TextBlock Text="Convert" VerticalAlignment="Center" Foreground="{StaticResource TitleBrush}" FontWeight="SemiBold"/>
+            </StackPanel>
+        </UniformGrid>
+
+        <Grid Grid.Row="2">
+            <ScrollViewer x:Name="Step0View" VerticalScrollBarVisibility="Auto">
+                <StackPanel>
+                    <Border Style="{StaticResource CardBorderStyle}">
+                        <StackPanel>
+                            <TextBlock Text="Direction" Style="{StaticResource SectionTitleStyle}"/>
+                            <TextBlock Text="Pick the conversion direction first. The next step adapts to the fields that matter for that choice." Style="{StaticResource BodyTextStyle}" Margin="0,0,0,12"/>
+                            <TextBlock Text="You can switch directions any time before converting." Style="{StaticResource BodyTextStyle}"/>
+                        </StackPanel>
+                    </Border>
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="24"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        <Border x:Name="JavaDirectionCard" Grid.Column="0" Style="{StaticResource CardBorderStyle}" Cursor="Hand" MouseLeftButtonUp="JavaDirectionCard_MouseLeftButtonUp">
+                            <StackPanel>
+                                <TextBlock Text="Java -&gt; LCE" Foreground="{StaticResource TitleBrush}" FontSize="16" FontWeight="Bold" Margin="0,0,0,8"/>
+                                <TextBlock Text="Convert a Java Edition world folder or zip into a legacy saveData.ms package." Style="{StaticResource BodyTextStyle}" Margin="0,0,0,12"/>
+                                <TextBlock Text="Best when your source is a Java save folder or backup zip." Style="{StaticResource HintTextStyle}" Margin="0"/>
+                            </StackPanel>
+                        </Border>
+                        <Border x:Name="LceDirectionCard" Grid.Column="2" Style="{StaticResource CardBorderStyle}" Cursor="Hand" MouseLeftButtonUp="LceDirectionCard_MouseLeftButtonUp">
+                            <StackPanel>
+                                <TextBlock Text="LCE -&gt; Java" Foreground="{StaticResource TitleBrush}" FontSize="16" FontWeight="Bold" Margin="0,0,0,8"/>
+                                <TextBlock Text="Extract a legacy save package into a standard Java Edition world folder." Style="{StaticResource BodyTextStyle}" Margin="0,0,0,12"/>
+                                <TextBlock Text="Best when your source is an existing saveData.ms package." Style="{StaticResource HintTextStyle}" Margin="0"/>
+                            </StackPanel>
+                        </Border>
+                    </Grid>
+                </StackPanel>
+            </ScrollViewer>
+
+            <ScrollViewer x:Name="Step1View" VerticalScrollBarVisibility="Auto" Visibility="Collapsed">
+                <StackPanel x:Name="Step1Root"/>
+            </ScrollViewer>
+
+            <Grid x:Name="Step2View" Visibility="Collapsed">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="*"/>
+                </Grid.RowDefinitions>
+                <Border Grid.Row="0" Style="{StaticResource CardBorderStyle}">
+                    <StackPanel>
+                        <TextBlock Text="Review" Style="{StaticResource SectionTitleStyle}"/>
+                        <TextBlock Text="Double-check the summary below before you start the conversion." Style="{StaticResource BodyTextStyle}" Margin="0,0,0,16"/>
+                        <TextBlock x:Name="ReviewSummaryText" Style="{StaticResource BodyTextStyle}"/>
+                    </StackPanel>
+                </Border>
+                <Border Grid.Row="1" Style="{StaticResource CardBorderStyle}">
+                    <StackPanel>
+                        <TextBlock Text="Run Conversion" Style="{StaticResource SectionTitleStyle}"/>
+                        <TextBlock Text="Start the conversion when you are happy with the current setup." Style="{StaticResource BodyTextStyle}" Margin="0,0,0,16"/>
+                        <WrapPanel>
+                            <Button x:Name="ConvertButton" Content="Convert" Style="{StaticResource PrimaryButtonStyle}" Click="ConvertButton_Click"/>
+                            <TextBlock x:Name="StatusText" Text="Ready" Foreground="{StaticResource AccentBrush}" FontSize="15" FontWeight="SemiBold" VerticalAlignment="Center" Margin="6,8,0,0"/>
+                        </WrapPanel>
+                    </StackPanel>
+                </Border>
+                <Border Grid.Row="2" Style="{StaticResource CardBorderStyle}" Margin="0">
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="*"/>
+                        </Grid.RowDefinitions>
+                        <TextBlock Grid.Row="0" Text="Activity Log" Style="{StaticResource SectionTitleStyle}"/>
+                        <TextBlock Grid.Row="1" Text="Live converter output will appear here while the job runs." Style="{StaticResource BodyTextStyle}" Margin="0,0,0,12"/>
+                        <Border Grid.Row="2" Background="{StaticResource LogBackgroundBrush}" CornerRadius="10" Padding="14">
+                            <TextBox x:Name="LogTextBox" Background="Transparent" BorderThickness="0" Foreground="{StaticResource LogTextBrush}" FontFamily="Consolas" FontSize="13" IsReadOnly="True" AcceptsReturn="True" TextWrapping="NoWrap" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"/>
+                        </Border>
+                    </Grid>
+                </Border>
+            </Grid>
+        </Grid>
+
+        <Grid Grid.Row="3" Margin="0,16,0,0">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+            <Button x:Name="BackButton" Grid.Column="1" Content="Back" Style="{StaticResource SecondaryButtonStyle}" Visibility="Collapsed" Click="BackButton_Click"/>
+            <Button x:Name="NextButton" Grid.Column="2" Content="Next" Style="{StaticResource PrimaryButtonStyle}" Margin="0" Click="NextButton_Click"/>
+        </Grid>
+    </Grid>
+</Window>

@@ -1,9 +1,13 @@
+using System.Buffers.Binary;
 using fNbt;
 
 namespace LceWorldConverter;
 
 public static class SaveDataInspector
 {
+    private const int LceRegionSectorBytes = 4096;
+    private const int LceChunkHeaderBytes = 8;
+
     public static void ScanJavaWorld(string worldPath, int top = 10)
     {
         using var reader = new JavaWorldReader(worldPath);
@@ -298,18 +302,19 @@ public static class SaveDataInspector
                     Console.WriteLine($"  Decompressed OK: {decompData.Length} bytes");
                     Console.WriteLine($"  First 32 bytes: {BitConverter.ToString(decompData, 0, Math.Min(32, decompData.Length))}");
 
-                    try
+                    if (LceChunkPayloadCodec.TryReadChunkCoordinates(decompData, out int chunkX, out int chunkZ, out bool hasLevelWrapper))
                     {
-                        var nbtFile = new fNbt.NbtFile();
-                        nbtFile.LoadFromBuffer(decompData, 0, decompData.Length, fNbt.NbtCompression.None);
-                        var root = nbtFile.RootTag;
-                        Console.WriteLine($"  NBT root: {root.Name} ({root.TagType})");
-                        foreach (var tag in root)
-                            Console.WriteLine($"    {tag.Name}: {tag.TagType}");
+                        Console.WriteLine($"  Chunk coords: ({chunkX}, {chunkZ})");
+                        Console.WriteLine($"  Compressed chunk storage: {IsCompressedChunkStoragePayload(decompData)}");
+                        Console.WriteLine($"  NBT root has Level: {hasLevelWrapper}");
 
-                        var level = root.Get<fNbt.NbtCompound>("Level");
-                        if (level != null)
+                        if (LceChunkPayloadCodec.TryDecodeToLegacyNbt(decompData, out byte[] legacyChunkNbt))
                         {
+                            var nbtFile = new fNbt.NbtFile();
+                            nbtFile.LoadFromBuffer(legacyChunkNbt, 0, legacyChunkNbt.Length, fNbt.NbtCompression.None);
+                            var root = nbtFile.RootTag;
+                            var level = root.Get<fNbt.NbtCompound>("Level") ?? root;
+
                             Console.WriteLine("  Level compound children:");
                             foreach (var tag in level)
                                 Console.WriteLine($"    {tag.Name}: {tag.TagType} {(tag is fNbt.NbtByteArray ba ? $"[{ba.Value.Length}]" : tag is fNbt.NbtInt ni ? $"={ni.Value}" : string.Empty)}");
@@ -343,10 +348,6 @@ public static class SaveDataInspector
                             }
                         }
                     }
-                    catch (Exception ex)
-                    {
-                        Console.WriteLine($"  NBT parse FAILED: {ex.Message}");
-                    }
                 }
                 catch (Exception ex)
                 {
@@ -358,6 +359,174 @@ public static class SaveDataInspector
 
             break;
         }
+    }
+
+    public static void InspectLceChunk(string savePath, int chunkX, int chunkZ, string dimension = "overworld")
+    {
+        var saveReader = new LceSaveDataReader(savePath);
+        string regionEntryName = GetLceRegionEntryName(chunkX, chunkZ, dimension, out int regionX, out int regionZ, out int localX, out int localZ);
+
+        Console.WriteLine($"Save: {savePath}");
+        Console.WriteLine($"Dimension: {dimension}");
+        Console.WriteLine($"Chunk: ({chunkX}, {chunkZ})");
+        Console.WriteLine($"Region: ({regionX}, {regionZ}) -> {regionEntryName}");
+        Console.WriteLine($"Local slot: ({localX}, {localZ}) index={localX + localZ * 32}");
+
+        if (!saveReader.TryGetFileBytes(regionEntryName, out byte[] regionBytes))
+        {
+            Console.WriteLine("Region entry not found in saveData.ms.");
+            return;
+        }
+
+        Console.WriteLine($"Region size: {regionBytes.Length} bytes");
+
+        if (!TryReadLceChunk(regionBytes, localX, localZ, out LceChunkInspectionResult chunk))
+        {
+            Console.WriteLine("Chunk slot is empty or unreadable.");
+            return;
+        }
+
+        Console.WriteLine($"Embedded chunk: ({chunk.ChunkX}, {chunk.ChunkZ})");
+        Console.WriteLine($"Offset entry: 0x{chunk.OffsetEntry:X8}");
+        Console.WriteLine($"Compressed length: {chunk.CompressedLength}");
+        Console.WriteLine($"Decompressed length: {chunk.DecompressedLength}");
+        Console.WriteLine($"RLE encoded: {chunk.UsesRle}");
+        Console.WriteLine($"Compressed chunk storage: {chunk.UsesCompressedChunkStorage}");
+        Console.WriteLine($"NBT root has Level: {chunk.HasLevelWrapper}");
+        if (chunk.TrailingNbtOffset >= 0)
+        {
+            Console.WriteLine($"Trailing NBT offset: {chunk.TrailingNbtOffset}");
+            Console.WriteLine($"Trailing NBT first bytes: {BitConverter.ToString(chunk.TrailingNbtPrefix)}");
+        }
+    }
+
+    public static void ScanLceCoordinates(string savePath, string dimension = "overworld")
+    {
+        var saveReader = new LceSaveDataReader(savePath);
+        string regionPrefix = GetLceRegionPrefix(dimension);
+        int scanned = 0;
+        int mismatches = 0;
+
+        foreach (var entry in saveReader.EnumerateEntries()
+            .Where(e => e.Length > LceRegionSectorBytes * 2 && e.Name.EndsWith(".mcr", StringComparison.OrdinalIgnoreCase))
+            .OrderBy(e => e.Name, StringComparer.OrdinalIgnoreCase))
+        {
+            if (!entry.Name.StartsWith(regionPrefix, StringComparison.OrdinalIgnoreCase))
+                continue;
+
+            if (!TryParseLceRegionCoordinates(entry.Name, out int regionX, out int regionZ))
+                continue;
+
+            if (!saveReader.TryGetFileBytes(entry.Name, out byte[] regionBytes))
+                continue;
+
+            for (int localZ = 0; localZ < 32; localZ++)
+            {
+                for (int localX = 0; localX < 32; localX++)
+                {
+                    if (!TryReadLceChunk(regionBytes, localX, localZ, out LceChunkInspectionResult chunk))
+                        continue;
+
+                    scanned++;
+                    int expectedX = regionX * 32 + localX;
+                    int expectedZ = regionZ * 32 + localZ;
+                    if (chunk.ChunkX != expectedX || chunk.ChunkZ != expectedZ)
+                    {
+                        mismatches++;
+                        Console.WriteLine(
+                            $"Mismatch in {entry.Name} slot ({localX},{localZ}) expected ({expectedX},{expectedZ}) got ({chunk.ChunkX},{chunk.ChunkZ})");
+                    }
+                }
+            }
+        }
+
+        Console.WriteLine($"Scanned chunks: {scanned}");
+        Console.WriteLine($"Coordinate mismatches: {mismatches}");
+    }
+
+    public static void ScanLceTrailingNbt(string savePath, string dimension = "overworld")
+    {
+        var saveReader = new LceSaveDataReader(savePath);
+        string regionPrefix = GetLceRegionPrefix(dimension);
+        int scanned = 0;
+        int invalid = 0;
+
+        foreach (var entry in saveReader.EnumerateEntries()
+            .Where(e => e.Length > LceRegionSectorBytes * 2 && e.Name.EndsWith(".mcr", StringComparison.OrdinalIgnoreCase))
+            .OrderBy(e => e.Name, StringComparer.OrdinalIgnoreCase))
+        {
+            if (!entry.Name.StartsWith(regionPrefix, StringComparison.OrdinalIgnoreCase))
+                continue;
+
+            if (!TryParseLceRegionCoordinates(entry.Name, out int regionX, out int regionZ))
+                continue;
+
+            if (!saveReader.TryGetFileBytes(entry.Name, out byte[] regionBytes))
+                continue;
+
+            for (int localZ = 0; localZ < 32; localZ++)
+            {
+                for (int localX = 0; localX < 32; localX++)
+                {
+                    int slotIndex = localX + localZ * 32;
+                    int entryOffset = slotIndex * 4;
+                    if (entryOffset + 4 > regionBytes.Length)
+                        continue;
+
+                    uint offsetEntry = BitConverter.ToUInt32(regionBytes, entryOffset);
+                    if (offsetEntry == 0)
+                        continue;
+
+                    int sectorOffset = (int)(offsetEntry >> 8);
+                    int chunkPos = sectorOffset * LceRegionSectorBytes;
+                    if (chunkPos + LceChunkHeaderBytes > regionBytes.Length)
+                        continue;
+
+                    uint compressedLengthRaw = BitConverter.ToUInt32(regionBytes, chunkPos);
+                    bool usesRle = (compressedLengthRaw & 0x80000000) != 0;
+                    int compressedLength = (int)(compressedLengthRaw & 0x7FFFFFFF);
+                    int decompressedLength = (int)BitConverter.ToUInt32(regionBytes, chunkPos + 4);
+                    if (compressedLength <= 0 || chunkPos + LceChunkHeaderBytes + compressedLength > regionBytes.Length)
+                        continue;
+
+                    byte[] compressed = new byte[compressedLength];
+                    Buffer.BlockCopy(regionBytes, chunkPos + LceChunkHeaderBytes, compressed, 0, compressedLength);
+
+                    byte[] decompressed;
+                    try
+                    {
+                        decompressed = usesRle
+                            ? LceCompression.Decompress(compressed, decompressedLength)
+                            : LceCompression.DecompressZlibOnly(compressed);
+                    }
+                    catch
+                    {
+                        continue;
+                    }
+
+                    if (!LceChunkPayloadCodec.TryGetCompressedChunkNbtOffset(decompressed, out int nbtOffset))
+                        continue;
+
+                    scanned++;
+                    try
+                    {
+                        var nbtFile = new NbtFile();
+                        nbtFile.LoadFromBuffer(decompressed, nbtOffset, decompressed.Length - nbtOffset, NbtCompression.None);
+                    }
+                    catch (Exception ex)
+                    {
+                        invalid++;
+                        int chunkX = regionX * 32 + localX;
+                        int chunkZ = regionZ * 32 + localZ;
+                        byte[] prefix = decompressed.AsSpan(nbtOffset, Math.Min(16, decompressed.Length - nbtOffset)).ToArray();
+                        Console.WriteLine($"Invalid trailing NBT at chunk ({chunkX}, {chunkZ}) in {entry.Name}: offset={nbtOffset}, prefix={BitConverter.ToString(prefix)}, error={ex.Message}");
+                    }
+                }
+            }
+        }
+
+        Console.WriteLine($"Scanned chunks: {scanned}");
+        Console.WriteLine($"Invalid trailing NBT chunks: {invalid}");
     }
 
     private static uint ReadUInt32BigEndian(byte[] bytes, int offset)
@@ -385,4 +554,130 @@ public static class SaveDataInspector
         zlib.CopyTo(output);
         return output.ToArray();
     }
+
+    private static bool TryReadLceChunk(byte[] regionBytes, int localX, int localZ, out LceChunkInspectionResult chunk)
+    {
+        chunk = default;
+
+        int slotIndex = localX + localZ * 32;
+        int entryOffset = slotIndex * 4;
+        if (entryOffset + 4 > regionBytes.Length)
+            return false;
+
+        uint offsetEntry = BitConverter.ToUInt32(regionBytes, entryOffset);
+        if (offsetEntry == 0)
+            return false;
+
+        int sectorOffset = (int)(offsetEntry >> 8);
+        int chunkPos = sectorOffset * LceRegionSectorBytes;
+        if (chunkPos + LceChunkHeaderBytes > regionBytes.Length)
+            return false;
+
+        uint compressedLengthRaw = BitConverter.ToUInt32(regionBytes, chunkPos);
+        bool usesRle = (compressedLengthRaw & 0x80000000) != 0;
+        int compressedLength = (int)(compressedLengthRaw & 0x7FFFFFFF);
+        int decompressedLength = (int)BitConverter.ToUInt32(regionBytes, chunkPos + 4);
+        if (compressedLength <= 0 || chunkPos + LceChunkHeaderBytes + compressedLength > regionBytes.Length)
+            return false;
+
+        byte[] compressed = new byte[compressedLength];
+        Buffer.BlockCopy(regionBytes, chunkPos + LceChunkHeaderBytes, compressed, 0, compressedLength);
+
+        byte[] decompressed = usesRle
+            ? LceCompression.Decompress(compressed, decompressedLength)
+            : LceCompression.DecompressZlibOnly(compressed);
+
+        if (!LceChunkPayloadCodec.TryReadChunkCoordinates(decompressed, out int chunkX, out int chunkZ, out bool hasLevelWrapper))
+            return false;
+
+        int trailingNbtOffset = -1;
+        byte[] trailingNbtPrefix = Array.Empty<byte>();
+        if (LceChunkPayloadCodec.TryGetCompressedChunkNbtOffset(decompressed, out int computedOffset))
+        {
+            trailingNbtOffset = computedOffset;
+            int prefixLength = Math.Min(16, Math.Max(0, decompressed.Length - computedOffset));
+            trailingNbtPrefix = prefixLength > 0
+                ? decompressed.AsSpan(computedOffset, prefixLength).ToArray()
+                : Array.Empty<byte>();
+        }
+
+        chunk = new LceChunkInspectionResult(
+            chunkX,
+            chunkZ,
+            offsetEntry,
+            compressedLength,
+            decompressedLength,
+            usesRle,
+            IsCompressedChunkStoragePayload(decompressed),
+            hasLevelWrapper,
+            trailingNbtOffset,
+            trailingNbtPrefix);
+        return true;
+    }
+
+    private static bool IsCompressedChunkStoragePayload(byte[] payload)
+    {
+        return payload.Length >= 2 && BinaryPrimitives.ReadInt16BigEndian(payload.AsSpan(0, 2)) is 8 or 9;
+    }
+
+    private static string GetLceRegionEntryName(int chunkX, int chunkZ, string dimension, out int regionX, out int regionZ, out int localX, out int localZ)
+    {
+        regionX = FloorDiv(chunkX, 32);
+        regionZ = FloorDiv(chunkZ, 32);
+        localX = PositiveMod(chunkX, 32);
+        localZ = PositiveMod(chunkZ, 32);
+        return $"{GetLceRegionPrefix(dimension)}r.{regionX}.{regionZ}.mcr";
+    }
+
+    private static string GetLceRegionPrefix(string dimension)
+    {
+        return dimension.Trim().ToLowerInvariant() switch
+        {
+            "overworld" or "" => string.Empty,
+            "nether" or "dim-1" => "DIM-1",
+            "end" or "dim1" => "DIM1/",
+            _ => throw new ArgumentOutOfRangeException(nameof(dimension), $"Unsupported dimension '{dimension}'.")
+        };
+    }
+
+    private static bool TryParseLceRegionCoordinates(string entryName, out int regionX, out int regionZ)
+    {
+        regionX = 0;
+        regionZ = 0;
+
+        string withoutExtension = Path.GetFileNameWithoutExtension(entryName.Replace('/', Path.DirectorySeparatorChar));
+        string[] parts = withoutExtension.Split('.', StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length < 3)
+            return false;
+
+        return int.TryParse(parts[^2], out regionX) && int.TryParse(parts[^1], out regionZ);
+    }
+
+    private static int FloorDiv(int value, int divisor)
+    {
+        int quotient = value / divisor;
+        int remainder = value % divisor;
+        if (remainder != 0 && value < 0)
+            quotient--;
+
+        return quotient;
+    }
+
+    private static int PositiveMod(int value, int modulus)
+    {
+        int remainder = value % modulus;
+        return remainder < 0 ? remainder + modulus : remainder;
+    }
+
+    private readonly record struct LceChunkInspectionResult(
+        int ChunkX,
+        int ChunkZ,
+        uint OffsetEntry,
+        int CompressedLength,
+        int DecompressedLength,
+        bool UsesRle,
+        bool UsesCompressedChunkStorage,
+        bool HasLevelWrapper,
+        int TrailingNbtOffset,
+        byte[] TrailingNbtPrefix);
 }

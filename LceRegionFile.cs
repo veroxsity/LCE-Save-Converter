@@ -50,10 +50,12 @@ public class LceRegionFile
         if (x < 0 || x >= 32 || z < 0 || z >= 32) return;
         if (uncompressedData.Length == 0) return;
 
-        uncompressedData = ForceChunkCoordinates(uncompressedData, _regionX * 32 + x, _regionZ * 32 + z);
+        uncompressedData = LceChunkPayloadCodec.ForceChunkCoordinates(uncompressedData, _regionX * 32 + x, _regionZ * 32 + z);
         if (uncompressedData.Length == 0) return;
 
-        byte[] compressed = LceCompression.Compress(uncompressedData);
+        // The runtime can load either zlib-only or RLE+zlib chunk payloads.
+        // Prefer plain zlib here to remove an extra compatibility edge in our writer.
+        byte[] compressed = LceCompression.CompressZlibOnly(uncompressedData);
 
         // Calculate sectors needed
         int totalSize = CHUNK_HEADER_SIZE + compressed.Length;
@@ -67,7 +69,7 @@ public class LceRegionFile
         // Seek to sector position and write chunk data
         _data.Seek(sectorNumber * SECTOR_BYTES, SeekOrigin.Begin);
 
-        uint storedLength = (uint)compressed.Length | 0x80000000u;
+        uint storedLength = (uint)compressed.Length;
         _data.Write(BitConverter.GetBytes(storedLength));
         _data.Write(BitConverter.GetBytes((uint)uncompressedData.Length));
         _data.Write(compressed);
@@ -116,56 +118,5 @@ public class LceRegionFile
             throw new InvalidOperationException($"Invalid region coordinates in file name: {filename}");
 
         return (regionX, regionZ);
-    }
-
-    private static byte[] ForceChunkCoordinates(byte[] chunkData, int expectedChunkX, int expectedChunkZ)
-    {
-        try
-        {
-            using var ms = new MemoryStream(chunkData);
-            var file = new NbtFile();
-            file.LoadFromStream(ms, NbtCompression.None);
-
-            NbtCompound root = file.RootTag;
-            NbtCompound? level = root.Get<NbtCompound>("Level");
-            if (level == null && root.Contains("Blocks"))
-            {
-                level = (NbtCompound)root.Clone();
-                level.Name = "Level";
-                root = new NbtCompound(string.Empty) { level };
-                file = new NbtFile(root);
-            }
-
-            if (level == null)
-                return Array.Empty<byte>();
-
-            UpsertTag(level, new NbtInt("xPos", expectedChunkX));
-            UpsertTag(level, new NbtInt("zPos", expectedChunkZ));
-
-            int actualChunkX = level.Get<NbtInt>("xPos")?.Value ?? int.MinValue;
-            int actualChunkZ = level.Get<NbtInt>("zPos")?.Value ?? int.MinValue;
-            if (actualChunkX != expectedChunkX || actualChunkZ != expectedChunkZ)
-                return Array.Empty<byte>();
-
-            using var output = new MemoryStream();
-            file.SaveToStream(output, NbtCompression.None);
-            return output.ToArray();
-        }
-        catch
-        {
-            return Array.Empty<byte>();
-        }
-    }
-
-    private static void UpsertTag(NbtCompound compound, NbtTag tag)
-    {
-        string? name = tag.Name;
-        if (string.IsNullOrEmpty(name))
-            return;
-
-        if (compound.Contains(name))
-            compound.Remove(name);
-
-        compound.Add(tag);
     }
 }

@@ -39,9 +39,10 @@ public static class LevelDatConverter
         int hellScale = 3;
 
         // Read original spawn
-        int spawnX = javaData.Get<NbtInt>("SpawnX")?.Value ?? 0;
-        int spawnY = javaData.Get<NbtInt>("SpawnY")?.Value ?? 64;
-        int spawnZ = javaData.Get<NbtInt>("SpawnZ")?.Value ?? 0;
+        JavaLevelDatHelper.SpawnPoint spawn = JavaLevelDatHelper.ReadSpawn(javaRoot);
+        int spawnX = spawn.X;
+        int spawnY = spawn.Y;
+        int spawnZ = spawn.Z;
 
         // LCE TU19 chunk height is 128 blocks (0..127).
         // If a terrain-derived spawn Y is provided, prefer it.

@@ -55,9 +55,10 @@ public sealed class LceWorldConversionService
         var javaLevelDat = reader.ReadLevelDat();
         var javaData = javaLevelDat.Get<NbtCompound>("Data")!;
 
-        int spawnX = javaData.Get<NbtInt>("SpawnX")?.Value ?? 0;
-        int spawnZ = javaData.Get<NbtInt>("SpawnZ")?.Value ?? 0;
-        int spawnY = javaData.Get<NbtInt>("SpawnY")?.Value ?? 64;
+        JavaLevelDatHelper.SpawnPoint spawn = JavaLevelDatHelper.ReadSpawn(javaLevelDat);
+        int spawnX = spawn.X;
+        int spawnZ = spawn.Z;
+        int spawnY = spawn.Y;
         int spawnChunkX = FloorDiv(spawnX, 16);
         int spawnChunkZ = FloorDiv(spawnZ, 16);
 
@@ -473,8 +474,11 @@ public sealed class LceWorldConversionService
     {
         try
         {
+            if (!LceChunkPayloadCodec.TryDecodeToLegacyNbt(rawNbt, out byte[] legacyNbt))
+                return rawNbt;
+
             var file = new NbtFile();
-            file.LoadFromBuffer(rawNbt, 0, rawNbt.Length, NbtCompression.None);
+            file.LoadFromBuffer(legacyNbt, 0, legacyNbt.Length, NbtCompression.None);
 
             NbtCompound root = file.RootTag;
             NbtCompound? level = root.Get<NbtCompound>("Level");
@@ -487,7 +491,7 @@ public sealed class LceWorldConversionService
             }
 
             if (level == null)
-                return rawNbt;
+                return legacyNbt;
 
             NbtCompound anvilLevel = BuildAnvilLevel(level, chunkX, chunkZ);
             var normalized = new NbtFile(new NbtCompound(string.Empty)
@@ -905,6 +909,10 @@ public sealed class LceWorldConversionService
                 byte[] lceChunkData;
                 try
                 {
+                    // Prefer the legacy root-NBT chunk path for Java -> LCE conversion.
+                    // The runtime upgrades this format itself and it is proving more
+                    // compatible for mixed-version/upgraded worlds than our custom
+                    // compressed-chunk writer.
                     lceChunkData = ChunkConverter.ConvertChunk(chunkNbt, lcx, lcz);
                     lceChunkData = CanonicalizeChunkNbt(lceChunkData, lcx, lcz);
                     if (lceChunkData.Length == 0)
@@ -958,84 +966,6 @@ public sealed class LceWorldConversionService
 
     private static byte[] CanonicalizeChunkNbt(byte[] chunkData, int expectedX, int expectedZ)
     {
-        try
-        {
-            using var ms = new MemoryStream(chunkData);
-            var file = new NbtFile();
-            file.LoadFromStream(ms, NbtCompression.None);
-
-            NbtCompound root = file.RootTag;
-            NbtCompound? level = root.Get<NbtCompound>("Level");
-
-            if (level == null && root.Contains("Blocks"))
-            {
-                level = (NbtCompound)root.Clone();
-                level.Name = "Level";
-                root = new NbtCompound(string.Empty) { level };
-                file = new NbtFile(root);
-            }
-
-            if (level == null)
-                return Array.Empty<byte>();
-
-            UpsertTag(level, new NbtInt("xPos", expectedX));
-            UpsertTag(level, new NbtInt("zPos", expectedZ));
-
-            EnsureByteArrayTag(level, "Blocks", ChunkConverter.CHUNK_BLOCKS);
-            EnsureByteArrayTag(level, "Data", ChunkConverter.CHUNK_NIBBLES);
-            EnsureByteArrayTag(level, "SkyLight", ChunkConverter.CHUNK_NIBBLES, fillByte: 0xFF);
-            EnsureByteArrayTag(level, "BlockLight", ChunkConverter.CHUNK_NIBBLES);
-            EnsureByteArrayTag(level, "HeightMap", ChunkConverter.HEIGHTMAP_SIZE);
-            EnsureByteArrayTag(level, "Biomes", ChunkConverter.BIOMES_SIZE, fillByte: 1);
-
-            if (!level.Contains("TerrainPopulatedFlags") && !level.Contains("TerrainPopulated"))
-                UpsertTag(level, new NbtShort("TerrainPopulatedFlags", 2046));
-
-            EnsureListTag(level, "Entities", NbtTagType.Compound);
-            EnsureListTag(level, "TileEntities", NbtTagType.Compound);
-
-            using var outMs = new MemoryStream();
-            file.SaveToStream(outMs, NbtCompression.None);
-            return outMs.ToArray();
-        }
-        catch
-        {
-            return Array.Empty<byte>();
-        }
-    }
-
-    private static void EnsureByteArrayTag(NbtCompound level, string name, int requiredLength, byte fillByte = 0)
-    {
-        byte[]? data = level.Get<NbtByteArray>(name)?.Value;
-        if (data != null && data.Length == requiredLength)
-            return;
-
-        var corrected = new byte[requiredLength];
-        if (fillByte != 0)
-            Array.Fill(corrected, fillByte);
-
-        if (data != null)
-            Buffer.BlockCopy(data, 0, corrected, 0, Math.Min(data.Length, requiredLength));
-
-        UpsertTag(level, new NbtByteArray(name, corrected));
-    }
-
-    private static void EnsureListTag(NbtCompound level, string name, NbtTagType listType)
-    {
-        if (level[name] is NbtList list && list.ListType == listType)
-            return;
-
-        UpsertTag(level, new NbtList(name, listType));
-    }
-
-    private static void UpsertTag(NbtCompound compound, NbtTag tag)
-    {
-        string? name = tag.Name;
-        if (string.IsNullOrEmpty(name))
-            return;
-
-        if (compound.Contains(name))
-            compound.Remove(name);
-        compound.Add(tag);
+        return LceChunkPayloadCodec.ForceChunkCoordinates(chunkData, expectedX, expectedZ);
     }
 }
