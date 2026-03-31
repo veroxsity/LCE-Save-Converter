@@ -18,8 +18,11 @@
 
   <ItemGroup>
     <Compile Remove="LceWorldConverter.Gui\**\*.cs" />
+    <Compile Remove="tests\**\*.cs" />
     <EmbeddedResource Remove="LceWorldConverter.Gui\**\*" />
+    <EmbeddedResource Remove="tests\**\*" />
     <None Remove="LceWorldConverter.Gui\**\*" />
+    <None Remove="tests\**\*" />
   </ItemGroup>
 
 </Project>
