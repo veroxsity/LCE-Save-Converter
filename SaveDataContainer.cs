@@ -204,7 +204,9 @@ public class SaveDataContainer
     private void WriteFooter()
     {
         int pos = _dataEnd;
-        foreach (var entry in _entries)
+        // Runtime save growth logic assumes the file table order matches physical file layout.
+        // Sort by start offset so the game can shift subsequent files correctly when a region grows.
+        foreach (var entry in _entries.OrderBy(e => e.StartOffset))
         {
             // Filename: wchar_t[64] = 128 bytes, UTF-16LE, null-padded
             byte[] nameBytes = new byte[128];

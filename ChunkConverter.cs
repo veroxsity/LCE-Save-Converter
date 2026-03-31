@@ -123,13 +123,13 @@ public static class ChunkConverter
 
         var tileEntities = PreserveDynamicChunkData
             ? BuildCompatibleTileEntities(sourceLevel, usesModernContentSchema)
-            : new NbtList("TileEntities", NbtTagType.Compound);
+            : BuildSafeSignTileEntities(sourceLevel, usesModernContentSchema);
         tileEntities.Name = "TileEntities";
         RemoveUnsupportedTileEntities(tileEntities);
+        RemapTileEntityPositions(tileEntities, blockOffsetX, blockOffsetZ);
         if (PreserveDynamicChunkData)
         {
             SanitizeLegacyItemStacks(tileEntities);
-            RemapTileEntityPositions(tileEntities, blockOffsetX, blockOffsetZ);
         }
         level.Add(tileEntities);
 
@@ -169,51 +169,39 @@ public static class ChunkConverter
             if (PreserveDynamicChunkData)
                 return CloneListOrEmpty(sourceLevel, "TileEntities", "block_entities");
 
-            return ExtractLegacySigns(sourceLevel);
+            return BuildSafeSignTileEntities(sourceLevel, isModernChunkLayout: false);
         }
 
-        return ExtractModernSigns(sourceLevel);
+        return BuildSafeSignTileEntities(sourceLevel, isModernChunkLayout: true);
     }
 
-    private static NbtList ExtractLegacySigns(NbtCompound sourceLevel)
+    private static NbtList BuildSafeSignTileEntities(NbtCompound sourceLevel, bool isModernChunkLayout)
     {
         var result = new NbtList("TileEntities", NbtTagType.Compound);
-        var source = CloneListOrEmpty(sourceLevel, "TileEntities", "block_entities");
-        foreach (NbtTag tag in source)
-        {
-            if (tag is not NbtCompound tileEntity)
-                continue;
-
-            string id = tileEntity.Get<NbtString>("id")?.Value ?? string.Empty;
-            if (id != "Sign")
-                continue;
-
-            var clone = (NbtCompound)tileEntity.Clone();
-            clone.Name = null;
-            result.Add(clone);
-        }
-
-        return result;
-    }
-
-    private static NbtList ExtractModernSigns(NbtCompound sourceLevel)
-    {
-        var result = new NbtList("TileEntities", NbtTagType.Compound);
-        var source = CloneListOrEmpty(sourceLevel, "block_entities", "TileEntities");
+        var source = CloneListOrEmpty(sourceLevel, isModernChunkLayout ? "block_entities" : "TileEntities", isModernChunkLayout ? "TileEntities" : "block_entities");
         foreach (NbtTag tag in source)
         {
             if (tag is not NbtCompound blockEntity)
                 continue;
 
-            if (!IsModernSignTileEntity(blockEntity))
+            bool isSign = isModernChunkLayout
+                ? IsModernSignTileEntity(blockEntity)
+                : IsLegacySignTileEntity(blockEntity);
+            if (!isSign)
                 continue;
 
-            NbtCompound sign = ConvertModernSignTileEntity(blockEntity);
+            NbtCompound sign = BuildSafeLegacySignTileEntity(blockEntity, isModernChunkLayout);
             sign.Name = null;
             result.Add(sign);
         }
 
         return result;
+    }
+
+    private static bool IsLegacySignTileEntity(NbtCompound blockEntity)
+    {
+        string id = blockEntity.Get<NbtString>("id")?.Value ?? string.Empty;
+        return id is "Sign" or "minecraft:sign";
     }
 
     private static void FlattenAnvilSections(
@@ -1765,18 +1753,15 @@ public static class ChunkConverter
             or "warped_hanging_sign";
     }
 
-    private static NbtCompound ConvertModernSignTileEntity(NbtCompound blockEntity)
+    private static NbtCompound BuildSafeLegacySignTileEntity(NbtCompound blockEntity, bool isModernSign)
     {
         int x = ReadTileEntityCoord(blockEntity, "x");
         int y = ReadTileEntityCoord(blockEntity, "y");
         int z = ReadTileEntityCoord(blockEntity, "z");
 
-        string[] lines = ExtractModernSignLines(blockEntity);
-        for (int i = 0; i < lines.Length; i++)
-        {
-            if (lines[i].Length > 15)
-                lines[i] = lines[i][..15];
-        }
+        string[] lines = isModernSign
+            ? ExtractModernSignLines(blockEntity)
+            : ExtractLegacySignLines(blockEntity);
 
         var sign = new NbtCompound(string.Empty)
         {
@@ -1812,7 +1797,7 @@ public static class ChunkConverter
             for (int i = 0; i < Math.Min(4, messages.Count); i++)
             {
                 if (messages[i] is NbtString line)
-                    lines[i] = SimplifySignText(line.Value);
+                    lines[i] = SanitizeLegacySignLine(SimplifySignText(line.Value));
             }
             return lines;
         }
@@ -1821,10 +1806,45 @@ public static class ChunkConverter
         {
             string key = $"Text{i + 1}";
             string value = blockEntity.Get<NbtString>(key)?.Value ?? string.Empty;
-            lines[i] = SimplifySignText(value);
+            lines[i] = SanitizeLegacySignLine(SimplifySignText(value));
         }
 
         return lines;
+    }
+
+    private static string[] ExtractLegacySignLines(NbtCompound blockEntity)
+    {
+        string[] lines = new string[4];
+        for (int i = 0; i < 4; i++)
+        {
+            string key = $"Text{i + 1}";
+            string value = blockEntity.Get<NbtString>(key)?.Value ?? string.Empty;
+            lines[i] = SanitizeLegacySignLine(SimplifySignText(value));
+        }
+
+        return lines;
+    }
+
+    private static string SanitizeLegacySignLine(string raw)
+    {
+        if (string.IsNullOrEmpty(raw))
+            return string.Empty;
+
+        var builder = new StringBuilder(raw.Length);
+        foreach (char ch in raw)
+        {
+            if (ch == '\r' || ch == '\n' || ch == '\t' || ch == '\0')
+                continue;
+
+            if (char.IsControl(ch))
+                continue;
+
+            builder.Append(ch);
+            if (builder.Length >= 15)
+                break;
+        }
+
+        return builder.ToString();
     }
 
     private static string SimplifySignText(string raw)
