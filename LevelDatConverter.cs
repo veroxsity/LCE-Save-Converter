@@ -177,6 +177,16 @@ public static class LevelDatConverter
         if (overrideSpawnZ.HasValue)
             UpsertTag(javaData, new NbtInt("SpawnZ", overrideSpawnZ.Value));
 
+        // Force a stable, known-upgradable Java baseline (1.12.2 / DataVersion 1343).
+        UpsertTag(javaData, new NbtInt("version", 19133));
+        UpsertTag(javaData, new NbtInt("DataVersion", 1343));
+        UpsertTag(javaData, new NbtCompound("Version")
+        {
+            new NbtInt("Id", 1343),
+            new NbtString("Name", "1.12.2"),
+            new NbtByte("Snapshot", 0),
+        });
+
         UpsertTag(javaData, new NbtLong("LastPlayed", DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()));
 
         var javaRoot = new NbtCompound(string.Empty)

@@ -50,7 +50,7 @@ public static class CommandLineOptionsParser
 
         int fromIndex = Array.IndexOf(args, "--from");
         if (fromIndex < 0)
-            return TryParseLegacyJavaToLce(args, out options, out error);
+            return TryParseLegacyPositional(args, out options, out error);
 
         if (fromIndex + 1 >= args.Length || args[fromIndex + 1].StartsWith("--", StringComparison.Ordinal))
         {
@@ -65,6 +65,15 @@ public static class CommandLineOptionsParser
             "lce" => TryParseFromLce(args, fromIndex, out options, out error),
             _ => Fail("Unknown --from value. Valid values are: java, lce.", out options, out error),
         };
+    }
+
+    private static bool TryParseLegacyPositional(string[] args, out ConversionOptions? options, out string? error)
+    {
+        string inputPath = args[0];
+        if (LooksLikeLceInput(inputPath))
+            return TryParseLegacyLceToJava(args, out options, out error);
+
+        return TryParseLegacyJavaToLce(args, out options, out error);
     }
 
     private static bool TryParseLegacyJavaToLce(string[] args, out ConversionOptions? options, out string? error)
@@ -96,6 +105,57 @@ public static class CommandLineOptionsParser
 
         error = null;
         return true;
+    }
+
+    private static bool TryParseLegacyLceToJava(string[] args, out ConversionOptions? options, out string? error)
+    {
+        options = null;
+
+        if (args.Contains("--preserve-entities"))
+        {
+            error = "--preserve-entities is only valid with Java->LCE conversion.";
+            return false;
+        }
+
+        if (args.Contains("--world-type") || args.Contains("--small-world") || args.Contains("--medium-world") || args.Contains("--large-world") || args.Contains("--flat-world"))
+        {
+            error = "World-size and flat-world flags are only valid with Java->LCE conversion.";
+            return false;
+        }
+
+        string inputPath = args[0];
+        string? outputDirArg = args.Length > 1 && !args[1].StartsWith("--", StringComparison.Ordinal) ? args[1] : null;
+        string outputName = Path.GetFileNameWithoutExtension(inputPath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+        if (string.IsNullOrWhiteSpace(outputName))
+            outputName = "RecoveredJavaWorld";
+
+        options = new ConversionOptions
+        {
+            Direction = ConversionDirection.LceToJava,
+            InputPath = inputPath,
+            OutputDirectory = outputDirArg ?? Path.Combine(Directory.GetCurrentDirectory(), outputName),
+            XzSize = ClassicWorldSize,
+            SizeLabel = "Classic",
+            FlatWorld = false,
+            ConvertAllDimensions = args.Contains("--all-dimensions"),
+            CopyPlayers = args.Contains("--copy-players"),
+            PreserveEntities = false,
+        };
+
+        error = null;
+        return true;
+    }
+
+    private static bool LooksLikeLceInput(string inputPath)
+    {
+        if (string.IsNullOrWhiteSpace(inputPath))
+            return false;
+
+        if (inputPath.EndsWith(".ms", StringComparison.OrdinalIgnoreCase))
+            return true;
+
+        string fileName = Path.GetFileName(inputPath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+        return fileName.Equals("saveData.ms", StringComparison.OrdinalIgnoreCase);
     }
 
     private static bool TryParseFromJava(string[] args, int fromIndex, out ConversionOptions? options, out string? error)
