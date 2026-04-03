@@ -135,7 +135,8 @@ public static class LevelDatConverter
         NbtCompound lceRoot,
         int? overrideSpawnX = null,
         int? overrideSpawnY = null,
-        int? overrideSpawnZ = null)
+        int? overrideSpawnZ = null,
+        NbtCompound? embeddedPlayer = null)
     {
         NbtCompound lceData = lceRoot.Get<NbtCompound>("Data") ?? lceRoot;
         NbtCompound javaData = (NbtCompound)lceData.Clone();
@@ -186,6 +187,13 @@ public static class LevelDatConverter
             new NbtString("Name", "1.12.2"),
             new NbtByte("Snapshot", 0),
         });
+
+        if (embeddedPlayer != null)
+        {
+            NbtCompound playerTag = (NbtCompound)embeddedPlayer.Clone();
+            playerTag.Name = "Player";
+            UpsertTag(javaData, playerTag);
+        }
 
         UpsertTag(javaData, new NbtLong("LastPlayed", DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()));
 

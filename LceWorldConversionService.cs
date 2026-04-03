@@ -174,6 +174,7 @@ public sealed class LceWorldConversionService
 
         string outputDir = options.OutputDirectory;
         Directory.CreateDirectory(outputDir);
+        DeleteStaleJavaRuntimeState(outputDir);
         DeleteLegacyOutputRegions(outputDir);
 
         logger.Info($"Source:      {saveDataPath}");
@@ -184,6 +185,12 @@ public sealed class LceWorldConversionService
 
         if (!saveReader.TryReadLevelDat(out NbtCompound lceLevelDat))
             throw new InvalidDataException("Input saveData.ms does not contain a readable level.dat entry.");
+
+        NbtCompound? embeddedPlayer = TryReadPrimaryLcePlayer(saveReader);
+        if (embeddedPlayer != null)
+            logger.Info("Embedding primary LCE player into level.dat (Data.Player).");
+        else
+            logger.Info("No usable LCE player entry found; Java level.dat will not include Data.Player.");
 
         logger.Info("Converting overworld regions...");
         var overworldStats = ConvertLceRegionsToJava(saveReader, outputDir, "overworld", logger);
@@ -217,7 +224,7 @@ public sealed class LceWorldConversionService
         }
 
         logger.Info("Converting level.dat...");
-        byte[] javaLevelDat = LevelDatConverter.ConvertLceToJava(lceLevelDat, spawnX, spawnY, spawnZ);
+        byte[] javaLevelDat = LevelDatConverter.ConvertLceToJava(lceLevelDat, spawnX, spawnY, spawnZ, embeddedPlayer);
         File.WriteAllBytes(Path.Combine(outputDir, "level.dat"), javaLevelDat);
 
         int playersCopied = 0;
@@ -295,6 +302,29 @@ public sealed class LceWorldConversionService
         return (chunkCount, densestChunk);
     }
 
+    private static void DeleteStaleJavaRuntimeState(string outputDir)
+    {
+        string[] staleDirs =
+        [
+            Path.Combine(outputDir, "playerdata"),
+            Path.Combine(outputDir, "players"),
+            Path.Combine(outputDir, "entities"),
+            Path.Combine(outputDir, "poi"),
+            Path.Combine(outputDir, "stats"),
+            Path.Combine(outputDir, "advancements"),
+        ];
+
+        foreach (string dir in staleDirs)
+        {
+            if (Directory.Exists(dir))
+                Directory.Delete(dir, recursive: true);
+        }
+
+        string levelDatPath = Path.Combine(outputDir, "level.dat");
+        if (File.Exists(levelDatPath))
+            File.Delete(levelDatPath);
+    }
+
     private static void DeleteLegacyOutputRegions(string outputDir)
     {
         string[] regionDirs =
@@ -313,6 +343,35 @@ public sealed class LceWorldConversionService
                 File.Delete(file);
             foreach (string file in Directory.GetFiles(dir, "*.mca"))
                 File.Delete(file);
+        }
+    }
+
+    private static NbtCompound? TryReadPrimaryLcePlayer(LceSaveDataReader saveReader)
+    {
+        var playerEntry = saveReader.EnumerateEntries()
+            .Where(entry => entry.Name.StartsWith("players/", StringComparison.OrdinalIgnoreCase)
+                && entry.Name.EndsWith(".dat", StringComparison.OrdinalIgnoreCase))
+            .OrderByDescending(entry => entry.LastModifiedTime)
+            .ThenBy(entry => entry.Name, StringComparer.OrdinalIgnoreCase)
+            .FirstOrDefault();
+
+        if (playerEntry == null)
+            return null;
+
+        if (!saveReader.TryGetFileBytes(playerEntry.Name, out byte[] playerBytes))
+            return null;
+
+        try
+        {
+            var playerFile = new NbtFile();
+            playerFile.LoadFromBuffer(playerBytes, 0, playerBytes.Length, NbtCompression.AutoDetect);
+            NbtCompound playerTag = (NbtCompound)playerFile.RootTag.Clone();
+            playerTag.Name = "Player";
+            return playerTag;
+        }
+        catch
+        {
+            return null;
         }
     }
 
