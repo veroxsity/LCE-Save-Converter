@@ -49,15 +49,163 @@ public static class ModernChunkWriter
         return "minecraft:air";
     }
 
+    private static string GetContextualBlockState(byte blockId, byte meta, int x, int globalY, int z, byte[] oldBlocks, byte[] oldData)
+    {
+        string modernState = GetModernBlockName(blockId, meta);
+
+        (byte neighborId, byte neighborMeta) GetNeighbor(int nx, int ny, int nz)
+        {
+            if (nx < 0 || nx > 15 || ny < 0 || ny > 127 || nz < 0 || nz > 15) return (0, 0);
+            int idx = ((nx * 16) + nz) * 128 + ny;
+            byte nId = oldBlocks[idx];
+            byte nMeta = GetNibble(oldData, idx);
+            return (nId, nMeta);
+        }
+
+        int bracketIndex = modernState.IndexOf('[');
+        string name = bracketIndex != -1 ? modernState.Substring(0, bracketIndex) : modernState;
+        var properties = new Dictionary<string, string>();
+        if (bracketIndex != -1)
+        {
+            string propsStr = modernState.Substring(bracketIndex + 1, modernState.Length - bracketIndex - 2);
+            foreach (var prop in propsStr.Split(','))
+            {
+                var kv = prop.Split('=');
+                if (kv.Length == 2) properties[kv[0]] = kv[1];
+            }
+        }
+
+        bool propertiesChanged = false;
+
+        // Doors
+        if (blockId == 64 || blockId == 71 || (blockId >= 193 && blockId <= 197))
+        {
+            bool isTop = (meta & 8) == 8;
+            properties["half"] = isTop ? "upper" : "lower";
+            
+            if (isTop)
+            {
+                properties["hinge"] = (meta & 1) == 1 ? "left" : "right";
+                var (bottomId, bottomMeta) = GetNeighbor(x, globalY - 1, z);
+                if (bottomId == blockId)
+                {
+                    int facingMeta = bottomMeta & 3;
+                    properties["facing"] = facingMeta switch { 0 => "east", 1 => "south", 2 => "west", 3 => "north", _ => "east" };
+                    properties["open"] = (bottomMeta & 4) == 4 ? "true" : "false";
+                }
+                else
+                {
+                    properties["facing"] = "east";
+                    properties["open"] = "false";
+                }
+            }
+            else
+            {
+                int facingMeta = meta & 3;
+                properties["facing"] = facingMeta switch { 0 => "east", 1 => "south", 2 => "west", 3 => "north", _ => "east" };
+                properties["open"] = (meta & 4) == 4 ? "true" : "false";
+                var (topId, topMeta) = GetNeighbor(x, globalY + 1, z);
+                if (topId == blockId)
+                {
+                    properties["hinge"] = (topMeta & 1) == 1 ? "left" : "right";
+                }
+                else
+                {
+                    properties["hinge"] = "left";
+                }
+            }
+            propertiesChanged = true;
+        }
+        // Signs
+        else if (blockId == 63 || blockId == 68)
+        {
+            if (blockId == 68) {
+                name = "minecraft:oak_wall_sign";
+                properties["facing"] = meta == 2 ? "north" : meta == 3 ? "south" : meta == 4 ? "west" : "east";
+            } else {
+                name = "minecraft:oak_sign";
+                properties["rotation"] = meta.ToString();
+            }
+            properties.Remove("waterlogged");
+            propertiesChanged = true;
+        }
+        // Torches (50, 75 unlit RS, 76 lit RS)
+        else if (blockId == 50 || blockId == 75 || blockId == 76)
+        {
+            if (meta >= 1 && meta <= 4)
+            {
+                name = blockId == 50 ? "minecraft:wall_torch" : (blockId == 76 ? "minecraft:redstone_wall_torch" : "minecraft:unlit_redstone_wall_torch");
+                properties["facing"] = meta == 1 ? "east" : meta == 2 ? "west" : meta == 3 ? "south" : "north";
+            }
+            else // Floor
+            {
+                name = blockId == 50 ? "minecraft:torch" : (blockId == 76 ? "minecraft:redstone_torch" : "minecraft:unlit_redstone_torch");
+                properties.Remove("facing");
+                properties.Remove("floor");
+            }
+            
+            if (blockId == 76) properties["lit"] = "true";
+            else if (blockId == 75) properties["lit"] = "false";
+            propertiesChanged = true;
+        }
+        // Chests
+        else if (blockId == 54 || blockId == 146) // 54 = Chest, 146 = Trapped Chest
+        {
+            name = blockId == 54 ? "minecraft:chest" : "minecraft:trapped_chest";
+            properties["type"] = "single";
+
+            string facing = meta == 2 ? "north" :
+                            meta == 3 ? "south" :
+                            meta == 4 ? "west" :
+                            meta == 5 ? "east" : "south";
+            properties["facing"] = facing;
+
+            (int dx, int dz)[] dirs = { (-1, 0), (1, 0), (0, -1), (0, 1) }; // west, east, north, south
+            foreach (var (dx, dz) in dirs)
+            {
+                var (nid, _) = GetNeighbor(x + dx, globalY, z + dz);
+                if (nid == blockId)
+                {
+                    bool isLeft = false;
+
+                    if (facing == "north") {
+                        if (dx == -1) isLeft = true; // Neighbor is West (Right). We are Left!
+                    }
+                    else if (facing == "south") {
+                        if (dx == 1) isLeft = true; // Neighbor is East (Right). We are Left!
+                    }
+                    else if (facing == "west") {
+                        if (dz == 1) isLeft = true; // Neighbor is South (Right). We are Left!
+                    }
+                    else if (facing == "east") {
+                        if (dz == -1) isLeft = true; // Neighbor is North (Right). We are Left!
+                    }
+
+                    properties["type"] = isLeft ? "left" : "right";
+                    break;
+                }
+            }
+            propertiesChanged = true;
+        }
+
+        if (propertiesChanged || name == "minecraft:red_bed")
+        {
+            if (properties.Count > 0)
+            {
+                var parts = new List<string>();
+                foreach (var kvp in properties) parts.Add($"{kvp.Key}={kvp.Value}");
+                return $"{name}[{string.Join(",", parts)}]";
+            }
+            return name;
+        }
+
+        return modernState;
+    }
+
     public static NbtCompound BuildModernAnvilLevel(ConversionOptions options, NbtCompound legacyLevel, int chunkX, int chunkZ)
     {
         byte[] oldBlocks = legacyLevel.Get<NbtByteArray>("Blocks")?.Value ?? new byte[32768];
         byte[] oldData = legacyLevel.Get<NbtByteArray>("Data")?.Value ?? new byte[16384];
-
-        var blockEntities = legacyLevel.Get<NbtList>("TileEntities")?.Clone() as NbtList ?? new NbtList("block_entities", NbtTagType.Compound);
-        blockEntities.Name = "block_entities";
-        var entities = legacyLevel.Get<NbtList>("Entities")?.Clone() as NbtList ?? new NbtList("Entities", NbtTagType.Compound);
-        entities.Name = "entities";
 
         var sections = new NbtList("sections", NbtTagType.Compound);
         for (int sectionY = 0; sectionY < 8; sectionY++)
@@ -80,7 +228,7 @@ public static class ModernChunkWriter
                         byte blockId = oldBlocks[legacyFlatIndex];
                         byte meta = GetNibble(oldData, legacyFlatIndex);
 
-                        string modernState = GetModernBlockName(blockId, meta);
+                        string modernState = GetContextualBlockState(blockId, meta, x, globalY, z, oldBlocks, oldData);
                         if (modernState != "minecraft:air") hasNonAir = true;
 
                         if (!paletteDict.TryGetValue(modernState, out int paletteIndex))
@@ -178,8 +326,6 @@ public static class ModernChunkWriter
         root.Add(new NbtInt("yPos", 0));
         root.Add(new NbtString("Status", "full"));
         root.Add(sections);
-        root.Add(blockEntities);
-        root.Add(entities);
 
         return root;
     }
