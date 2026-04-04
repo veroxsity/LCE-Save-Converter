@@ -370,6 +370,22 @@ public static class ModernChunkWriter
                 }
             }
         }
+        for (int i = 0; i < 32768; i++)
+        {
+            if (oldBlocks[i] == 26)
+            {
+                int y = i % 128;
+                int z = (i / 128) % 16;
+                int x = i / 2048;
+                var bedTe = new NbtCompound();
+                bedTe.Add(new NbtString("id", "minecraft:bed"));
+                bedTe.Add(new NbtInt("color", 14));
+                bedTe.Add(new NbtInt("x", (chunkX * 16) + x));
+                bedTe.Add(new NbtInt("y", y));
+                bedTe.Add(new NbtInt("z", (chunkZ * 16) + z));
+                blockEntities.Add(bedTe);
+            }
+        }
         root.Add(blockEntities);
         root.Add(sections);
 
