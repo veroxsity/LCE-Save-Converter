@@ -220,6 +220,99 @@ public static class ModernChunkWriter
             }
             propertiesChanged = true;
         }
+        // Stairs
+        else if (IsStairLegacy(blockId))
+        {
+            string facing = GetStairFacing(meta);
+            string half = (meta & StairUpsideDownBit) != 0 ? "top" : "bottom";
+
+            properties["facing"] = facing;
+            properties["half"] = half;
+            properties["shape"] = "straight";
+
+            (int dx, int dz) frontOffset = facing switch
+            {
+                "north" => (0, 1),
+                "south" => (0, -1),
+                "west" => (1, 0),
+                "east" => (-1, 0),
+                _ => (0, 0),
+            };
+
+            (int dx, int dz) backOffset = facing switch
+            {
+                "north" => (0, -1),
+                "south" => (0, 1),
+                "west" => (-1, 0),
+                "east" => (1, 0),
+                _ => (0, 0),
+            };
+
+            if (TryGetLegacyStairState(GetNeighbor(x + backOffset.dx, globalY, z + backOffset.dz), out string backFacing, out string backHalf) && backHalf == half)
+            {
+                if (TryGetRelativeSide(facing, backFacing, out string backSide))
+                {
+                    properties["shape"] = $"outer_{backSide}";
+                }
+            }
+            else if (TryGetLegacyStairState(GetNeighbor(x + frontOffset.dx, globalY, z + frontOffset.dz), out string frontFacing, out string frontHalf) && frontHalf == half)
+            {
+                if (TryGetRelativeSide(facing, frontFacing, out string frontSide))
+                {
+                    properties["shape"] = $"inner_{frontSide}";
+                }
+            }
+
+            propertiesChanged = true;
+        }
+        // Fences
+        else if (IsFenceLegacy(blockId))
+        {
+            bool north = false;
+            bool east = false;
+            bool south = false;
+            bool west = false;
+
+            var (nId, _) = GetNeighbor(x, globalY, z - 1);
+            var (eId, _) = GetNeighbor(x + 1, globalY, z);
+            var (sId, _) = GetNeighbor(x, globalY, z + 1);
+            var (wId, _) = GetNeighbor(x - 1, globalY, z);
+
+            north = IsFenceLegacy(nId) || IsFenceGateLegacy(nId) || IsLikelySolidAttachment(nId);
+            east  = IsFenceLegacy(eId) || IsFenceGateLegacy(eId) || IsLikelySolidAttachment(eId);
+            south = IsFenceLegacy(sId) || IsFenceGateLegacy(sId) || IsLikelySolidAttachment(sId);
+            west  = IsFenceLegacy(wId) || IsFenceGateLegacy(wId) || IsLikelySolidAttachment(wId);
+
+            properties["north"] = north ? "true" : "false";
+            properties["east"] = east ? "true" : "false";
+            properties["south"] = south ? "true" : "false";
+            properties["west"] = west ? "true" : "false";
+            propertiesChanged = true;
+        }
+        // Panes / Iron Bars
+        else if (IsPaneLegacy(blockId))
+        {
+            bool north = false;
+            bool east = false;
+            bool south = false;
+            bool west = false;
+
+            var (nId, _) = GetNeighbor(x, globalY, z - 1);
+            var (eId, _) = GetNeighbor(x + 1, globalY, z);
+            var (sId, _) = GetNeighbor(x, globalY, z + 1);
+            var (wId, _) = GetNeighbor(x - 1, globalY, z);
+
+            north = IsPaneLegacy(nId) || IsGlassLegacy(nId) || IsLikelySolidAttachment(nId);
+            east  = IsPaneLegacy(eId) || IsGlassLegacy(eId) || IsLikelySolidAttachment(eId);
+            south = IsPaneLegacy(sId) || IsGlassLegacy(sId) || IsLikelySolidAttachment(sId);
+            west  = IsPaneLegacy(wId) || IsGlassLegacy(wId) || IsLikelySolidAttachment(wId);
+
+            properties["north"] = north ? "true" : "false";
+            properties["east"] = east ? "true" : "false";
+            properties["south"] = south ? "true" : "false";
+            properties["west"] = west ? "true" : "false";
+            propertiesChanged = true;
+        }
 
         if (propertiesChanged || name == "minecraft:red_bed")
         {
@@ -445,6 +538,106 @@ public static class ModernChunkWriter
             return (byte)(data[byteIndex] & 0x0F);
         else
             return (byte)((data[byteIndex] >> 4) & 0x0F);
+    }
+
+    private static bool IsFenceLegacy(byte id)
+    {
+        return id == 85 || id == 113 || id == 188 || id == 189 || id == 190 || id == 191 || id == 192;
+    }
+
+    private const byte StairUpsideDownBit = 4;
+
+    private static bool IsStairLegacy(byte id)
+    {
+        return id == 53 || id == 67 || id == 108 || id == 109 || id == 114 || id == 128 || id == 134 || id == 135 || id == 136 || id == 156 || id == 163 || id == 164 || id == 180;
+    }
+
+    private static string GetStairFacing(byte meta)
+    {
+        return (meta & 0x3) switch
+        {
+            0 => "east",
+            1 => "west",
+            2 => "south",
+            3 => "north",
+            _ => "north",
+        };
+    }
+
+    private static bool TryGetRelativeSide(string currentFacing, string neighborFacing, out string side)
+    {
+        side = string.Empty;
+
+        if (currentFacing == "north")
+        {
+            if (neighborFacing == "west") { side = "left"; return true; }
+            if (neighborFacing == "east") { side = "right"; return true; }
+        }
+        else if (currentFacing == "south")
+        {
+            if (neighborFacing == "east") { side = "left"; return true; }
+            if (neighborFacing == "west") { side = "right"; return true; }
+        }
+        else if (currentFacing == "west")
+        {
+            if (neighborFacing == "south") { side = "left"; return true; }
+            if (neighborFacing == "north") { side = "right"; return true; }
+        }
+        else if (currentFacing == "east")
+        {
+            if (neighborFacing == "north") { side = "left"; return true; }
+            if (neighborFacing == "south") { side = "right"; return true; }
+        }
+
+        return false;
+    }
+
+    private static string GetOppositeSide(string side)
+    {
+        return side == "left" ? "right" : "left";
+    }
+
+    private static bool TryGetLegacyStairState((byte neighborId, byte neighborMeta) neighbor, out string facing, out string half)
+    {
+        facing = string.Empty;
+        half = string.Empty;
+
+        if (!IsStairLegacy(neighbor.neighborId))
+            return false;
+
+        facing = GetStairFacing(neighbor.neighborMeta);
+        half = (neighbor.neighborMeta & StairUpsideDownBit) != 0 ? "top" : "bottom";
+        return true;
+    }
+
+    private static bool IsFenceGateLegacy(byte id)
+    {
+        return id == 107 || id == 183 || id == 184 || id == 185 || id == 186 || id == 187;
+    }
+
+    private static bool IsPaneLegacy(byte id)
+    {
+        return id == 101 || id == 102 || id == 160;
+    }
+
+    private static bool IsGlassLegacy(byte id)
+    {
+        return id == 20 || id == 95;
+    }
+
+    private static bool IsLikelySolidAttachment(byte id)
+    {
+        if (id == 0) return false;
+        if (id >= 8 && id <= 11) return false;
+
+        return id switch
+        {
+            6 or 27 or 28 or 30 or 31 or 32 or 37 or 38 or 39 or 40 or 50 or 51 or 55 or 59 or 63 or 65 or 66 or 68 or
+            69 or 70 or 71 or 72 or 75 or 76 or 77 or 78 or 83 or 90 or 92 or 93 or 94 or 96 or 101 or 102 or 104 or 105 or
+            106 or 107 or 111 or 115 or 119 or 127 or 131 or 132 or 141 or 142 or 143 or 147 or 148 or 149 or 150 or 157 or
+            160 or 171 or 175 => false,
+            _ => true,
+        };
     }
 
     private static void ReconcileDoubleChestInventories(NbtList blockEntities, byte[] oldBlocks, byte[] oldData)
