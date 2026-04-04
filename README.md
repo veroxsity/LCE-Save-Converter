@@ -13,7 +13,7 @@
   <img src="https://img.shields.io/github/downloads/veroxsity/LCE-Save-Converter/total?style=flat-square&label=Downloads" alt="Downloads" />
 </p>
 
-Convert Java Edition worlds into Minecraft Legacy Console Edition (LCE) `saveData.ms`, and convert LCE saves back to Java world folders reversably.
+Convert Java Edition worlds into Minecraft Legacy Console Edition (LCE) `saveData.ms`, and convert LCE saves back into Java world folders reversibly.
 
 ## Workspace Role
 
@@ -29,19 +29,19 @@ Convert Java Edition worlds into Minecraft Legacy Console Edition (LCE) `saveDat
 
 ### GUI (Recommended)
 
-1. Zip your Java world folder.
-2. Open `LceWorldConverter.Gui.exe`.
-3. Click `Explore...` and select your world zip.
-4. Select an output folder.
-5. Click `Convert`.
+1. Open `LceWorldConverter.Gui.exe`.
+2. Choose `Java -> LCE` or `LCE -> Java`.
+3. Select a Java world folder or `.zip`, or select an existing `saveData.ms`.
+4. Choose an output folder and any extra options.
+5. Review the summary and click `Convert`.
 
-The converter extracts your zip to a temp folder and writes `saveData.ms` to the output folder you chose.
+The GUI now uses the same shared validation and defaults as the CLI, so both entry points follow the same conversion rules.
 
 ### CLI (Prebuilt EXE)
 
 ```powershell
 .\LceWorldConverter.exe --from java <java_world_folder_or_zip> <output_dir> [--world-type <classic|small|medium|large|flat|flat-small|flat-medium|flat-large>] [--all-dimensions] [--copy-players] [--preserve-entities]
-.\LceWorldConverter.exe --from lce <saveData.ms_path> <java_world_output_dir> [--all-dimensions] [--copy-players]
+.\LceWorldConverter.exe --from lce <saveData.ms_path> <java_world_output_dir> [--all-dimensions] [--copy-players] [--target-version <version>]
 ```
 
 Common examples:
@@ -54,7 +54,7 @@ Common examples:
 .\LceWorldConverter.exe --from java "C:\Users\You\Desktop\MyWorld.zip" "D:\GameHDD\MySlot"
 
 # LCE to Java
-.\LceWorldConverter.exe --from lce "D:\GameHDD\MySlot\saveData.ms" "C:\Users\You\Desktop\RecoveredJavaWorld" --all-dimensions --copy-players
+.\LceWorldConverter.exe --from lce "D:\GameHDD\MySlot\saveData.ms" "C:\Users\You\Desktop\RecoveredJavaWorld" --all-dimensions --copy-players --target-version 1.21.11
 ```
 
 ## What You Get
@@ -85,10 +85,13 @@ Drop `saveData.ms` into your server world folder (for example `GameHDD/<worldnam
 | `java_world_output_dir` | LCE->Java output world directory |
 | `--world-type <...>` | Java->LCE only: `classic`, `small`, `medium`, `large`, `flat`, `flat-small`, `flat-medium`, `flat-large` |
 | `--all-dimensions` | Convert Nether and End too |
-| `--copy-players` | Java->LCE imports numeric player data; LCE->Java exports `players/*.dat` |
+| `--copy-players` | Java->LCE imports numeric `players/*.dat`; LCE->Java exports player data into `playerdata/` |
 | `--preserve-entities` | Java->LCE only: keep entities/tile data (less compatibility-safe) |
+| `--target-version <version>` | LCE->Java only: choose the minimum Java target version; defaults to `1.12.2` in CLI |
 
 Legacy Java->LCE positional mode still exists: `.\LceWorldConverter.exe <java_world_folder_or_zip> [output_dir] [flags...]`.
+
+Supported LCE->Java target versions currently include `1.12.2`, `1.13.2`, `1.14.4`, `1.15.2`, `1.16.5`, `1.17.1`, `1.18.2`, `1.19.4`, `1.20.4`, `1.21.4`, and `1.21.11`.
 
 ## Inspect Existing saveData.ms
 
@@ -105,6 +108,16 @@ Legacy Java->LCE positional mode still exists: `.\LceWorldConverter.exe <java_wo
 ## Technical Docs
 
 Full format notes, source references, and conversion internals are in [CONVERTER_DOCS.md](CONVERTER_DOCS.md).
+
+## Project Layout
+
+- `LceWorldConverter.csproj`: shared core conversion library
+- `LceWorldConverter.Cli/`: command-line app that publishes as `LceWorldConverter.exe` in release packages
+- `LceWorldConverter.Gui/`: WPF desktop GUI
+- `src/Requests/`: shared request model, defaults, and validation
+- `src/Services/`: focused conversion-side services
+- `tests/`: unit and integration-oriented regression coverage
+- `scripts/build-release.ps1`: multi-runtime packaging script for zip assets, installer, and checksums
 
 ## Related Repositories
 
@@ -124,7 +137,8 @@ Requires [.NET 8 SDK](https://dotnet.microsoft.com/download).
 ```bash
 git clone https://github.com/veroxsity/LCE-Save-Converter.git
 cd LCE-Save-Converter
-dotnet build ./LceWorldConverter.sln
+dotnet build ./LceWorldConverter.sln -c Release
+dotnet test ./tests/LceWorldConverter.Tests.csproj -c Release
 ```
 
 Build GUI project:
@@ -143,4 +157,10 @@ Run CLI from source:
 
 ```powershell
 dotnet run --project .\LceWorldConverter.Cli\LceWorldConverter.Cli.csproj -- --from java <java_world_folder_or_zip> <output_dir>
+```
+
+Create release artifacts locally:
+
+```powershell
+.\scripts\build-release.ps1 --version 2.3.0
 ```
