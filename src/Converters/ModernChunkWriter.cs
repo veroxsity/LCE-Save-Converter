@@ -85,7 +85,7 @@ public static class ModernChunkWriter
             
             if (isTop)
             {
-                properties["hinge"] = (meta & 1) == 1 ? "left" : "right";
+                properties["hinge"] = (meta & 1) == 1 ? "right" : "left";
                 var (bottomId, bottomMeta) = GetNeighbor(x, globalY - 1, z);
                 if (bottomId == blockId)
                 {
@@ -107,7 +107,7 @@ public static class ModernChunkWriter
                 var (topId, topMeta) = GetNeighbor(x, globalY + 1, z);
                 if (topId == blockId)
                 {
-                    properties["hinge"] = (topMeta & 1) == 1 ? "left" : "right";
+                    properties["hinge"] = (topMeta & 1) == 1 ? "right" : "left";
                 }
                 else
                 {
@@ -181,7 +181,7 @@ public static class ModernChunkWriter
                         if (dz == -1) isLeft = true; // Neighbor is North (Right). We are Left!
                     }
 
-                    properties["type"] = isLeft ? "left" : "right";
+                    properties["type"] = isLeft ? "right" : "left";
                     break;
                 }
             }
