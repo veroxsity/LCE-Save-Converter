@@ -29,6 +29,7 @@ public partial class MainWindow : Window
     private CheckBox JavaPreserveEntitiesCheckBox = null!;
     private TextBox LceInputTextBox = null!;
     private TextBox LceOutputTextBox = null!;
+    private ComboBox LceTargetVersionComboBox = null!;
     private CheckBox LceAllDimensionsCheckBox = null!;
     private CheckBox LceCopyPlayersCheckBox = null!;
 
@@ -37,6 +38,7 @@ public partial class MainWindow : Window
         InitializeComponent();
         BuildStep1Content();
         PopulateWorldTypes();
+        PopulateTargetVersions();
         ApplyDirectionState();
         GoToStep(0);
     }
@@ -52,6 +54,7 @@ public partial class MainWindow : Window
 
         LceInputTextBox = CreatePathTextBox(PathDropKind.AnyFile, LceInputTextBox_Drop);
         LceOutputTextBox = CreatePathTextBox(PathDropKind.Directory, LceOutputTextBox_Drop);
+        LceTargetVersionComboBox = CreateTargetVersionComboBox();
         LceAllDimensionsCheckBox = CreateCheckBox("Export Nether and End");
         LceCopyPlayersCheckBox = CreateCheckBox("Export players/*.dat");
 
@@ -70,6 +73,22 @@ public partial class MainWindow : Window
         JavaWorldTypeComboBox.Items.Add("flat-medium");
         JavaWorldTypeComboBox.Items.Add("flat-large");
         JavaWorldTypeComboBox.SelectedItem = "classic";
+    }
+
+    private void PopulateTargetVersions()
+    {
+        LceTargetVersionComboBox.Items.Add("1.12.2");
+        LceTargetVersionComboBox.Items.Add("1.13.2");
+        LceTargetVersionComboBox.Items.Add("1.14.4");
+        LceTargetVersionComboBox.Items.Add("1.15.2");
+        LceTargetVersionComboBox.Items.Add("1.16.5");
+        LceTargetVersionComboBox.Items.Add("1.17.1");
+        LceTargetVersionComboBox.Items.Add("1.18.2");
+        LceTargetVersionComboBox.Items.Add("1.19.4");
+        LceTargetVersionComboBox.Items.Add("1.20.4");
+        LceTargetVersionComboBox.Items.Add("1.21.4");
+        LceTargetVersionComboBox.Items.Add("1.21.11");
+        LceTargetVersionComboBox.SelectedItem = "1.21.11";
     }
 
     private void GoToStep(int step)
@@ -157,9 +176,11 @@ public partial class MainWindow : Window
 
         string lceDimensions = LceAllDimensionsCheckBox.IsChecked == true ? "Export Nether and End" : "Export Overworld only";
         string lcePlayers = LceCopyPlayersCheckBox.IsChecked == true ? "Export players/*.dat" : "Do not export players";
+        string targetVersion = LceTargetVersionComboBox.Text ?? "1.12.2";
 
         return
             $"Direction: LCE -> Java{Environment.NewLine}" +
+            $"Target version: {targetVersion}{Environment.NewLine}" +
             $"Input: {FormatSummaryPath(LceInputTextBox.Text)}{Environment.NewLine}" +
             $"Output folder: {FormatSummaryPath(LceOutputTextBox.Text)}{Environment.NewLine}" +
             $"Dimensions: {lceDimensions}{Environment.NewLine}" +
@@ -263,6 +284,7 @@ public partial class MainWindow : Window
             Direction = ConversionDirection.LceToJava,
             InputPath = LceInputTextBox.Text,
             OutputDirectory = LceOutputTextBox.Text,
+            TargetVersion = string.IsNullOrWhiteSpace(LceTargetVersionComboBox.Text) ? "1.12.2" : LceTargetVersionComboBox.Text,
             XzSize = 54,
             SizeLabel = "Classic",
             FlatWorld = false,
@@ -560,7 +582,8 @@ public partial class MainWindow : Window
 
         panel.Children.Add(CreateCard(
             "Options",
-            "Choose whether to export additional dimensions and player data into the Java output.",
+            "Choose your target Java Edition version and select whether to export additional dimensions and player data.",
+            CreateOptionRow("Target Version", "The minimum Java Edition version that will run this world.", LceTargetVersionComboBox),
             CreateWrapPanel(LceAllDimensionsCheckBox, LceCopyPlayersCheckBox)));
         return panel;
     }
@@ -698,6 +721,18 @@ public partial class MainWindow : Window
             Height = 36,
             HorizontalAlignment = HorizontalAlignment.Left,
             VerticalAlignment = VerticalAlignment.Top,
+        };
+    }
+
+    private static ComboBox CreateTargetVersionComboBox()
+    {
+        return new ComboBox
+        {
+            Width = 240,
+            Height = 36,
+            HorizontalAlignment = HorizontalAlignment.Left,
+            VerticalAlignment = VerticalAlignment.Top,
+            IsEditable = true,
         };
     }
 
