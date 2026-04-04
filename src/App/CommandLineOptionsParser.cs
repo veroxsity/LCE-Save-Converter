@@ -15,7 +15,8 @@ public static class CommandLineOptionsParser
             "  LceWorldConverter --from java <java_world_folder_or_zip> <output_dir> [--world-type <classic|small|medium|large|flat|flat-small|flat-medium|flat-large>] [--all-dimensions] [--copy-players] [--preserve-entities]",
             "  LceWorldConverter --from lce <saveData.ms_path> <java_world_output_dir> [--all-dimensions] [--copy-players]",
             string.Empty,
-            "  --from java|lce           Conversion direction.",
+            "  --from java|lce             Conversion direction.",
+            "  --target-version          LCE->Java: target modern MC version (e.g. 1.21.11)",
             "  java_world_folder_or_zip  Path to a Java world folder or a .zip archive containing one.",
             "  saveData.ms_path          Path to an LCE saveData.ms file.",
             "  output_dir                Java->LCE: directory to write saveData.ms into.",
@@ -140,6 +141,7 @@ public static class CommandLineOptionsParser
             ConvertAllDimensions = args.Contains("--all-dimensions"),
             CopyPlayers = args.Contains("--copy-players"),
             PreserveEntities = false,
+            TargetVersion = GetOptionValue(args, "--target-version") ?? "1.12.2"
         };
 
         error = null;
@@ -226,10 +228,22 @@ public static class CommandLineOptionsParser
             ConvertAllDimensions = args.Contains("--all-dimensions"),
             CopyPlayers = args.Contains("--copy-players"),
             PreserveEntities = false,
+            TargetVersion = GetOptionValue(args, "--target-version") ?? "1.12.2"
         };
 
         error = null;
         return true;
+    }
+
+
+    private static string? GetOptionValue(string[] args, string flag)
+    {
+        int index = Array.IndexOf(args, flag);
+        if (index >= 0 && index + 1 < args.Length)
+        {
+            return args[index + 1];
+        }
+        return null;
     }
 
     private static List<string> CollectPositionals(string[] args, int fromIndex)
@@ -242,7 +256,7 @@ public static class CommandLineOptionsParser
 
             if (args[i].StartsWith("--", StringComparison.Ordinal))
             {
-                if (args[i].Equals("--world-type", StringComparison.Ordinal) && i + 1 < args.Length)
+                if ((args[i].Equals("--world-type", StringComparison.Ordinal) || args[i].Equals("--target-version", StringComparison.Ordinal)) && i + 1 < args.Length)
                     i++;
 
                 continue;

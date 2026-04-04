@@ -13,6 +13,7 @@ public sealed class ConversionOptions
     public required string OutputDirectory { get; init; }
     public required int XzSize { get; init; }
     public required string SizeLabel { get; init; }
+    public string TargetVersion { get; init; } = "1.12.2";
     public bool FlatWorld { get; init; }
     public bool ConvertAllDimensions { get; init; }
     public bool CopyPlayers { get; init; }

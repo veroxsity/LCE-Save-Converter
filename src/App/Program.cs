@@ -28,6 +28,20 @@ internal static class Program
             return 0;
         }
 
+        if (args.Length > 0 && args[0] == "--inspect-java-chunk")
+        {
+            if (args.Length < 4
+                || !int.TryParse(args[2], out int chunkX)
+                || !int.TryParse(args[3], out int chunkZ))
+            {
+                Console.WriteLine("Usage: LceWorldConverter --inspect-java-chunk <java_world_path> <chunk_x> <chunk_z> [overworld|nether|end]");
+                return 1;
+            }
+
+            SaveDataInspector.InspectJavaChunk(args[1], chunkX, chunkZ, args.Length > 4 ? args[4] : "overworld");
+            return 0;
+        }
+
         if (args.Length > 0 && args[0] == "--inspect")
         {
             if (args.Length < 2)

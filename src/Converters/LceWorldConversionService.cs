@@ -193,7 +193,7 @@ public sealed class LceWorldConversionService
             logger.Info("No usable LCE player entry found; Java level.dat will not include Data.Player.");
 
         logger.Info("Converting overworld regions...");
-        var overworldStats = ConvertLceRegionsToJava(saveReader, outputDir, "overworld", logger);
+        var overworldStats = ConvertLceRegionsToJava(options, saveReader, outputDir, "overworld", logger);
         int overworldChunks = overworldStats.chunkCount;
 
         int netherChunks = 0;
@@ -201,10 +201,10 @@ public sealed class LceWorldConversionService
         if (options.ConvertAllDimensions)
         {
             logger.Info("Converting nether regions...");
-            netherChunks = ConvertLceRegionsToJava(saveReader, outputDir, "nether", logger).chunkCount;
+            netherChunks = ConvertLceRegionsToJava(options, saveReader, outputDir, "nether", logger).chunkCount;
 
             logger.Info("Converting end regions...");
-            endChunks = ConvertLceRegionsToJava(saveReader, outputDir, "end", logger).chunkCount;
+            endChunks = ConvertLceRegionsToJava(options, saveReader, outputDir, "end", logger).chunkCount;
         }
         else
         {
@@ -261,6 +261,7 @@ public sealed class LceWorldConversionService
     }
 
     private static (int chunkCount, DensestChunk? densestChunk) ConvertLceRegionsToJava(
+        ConversionOptions options,
         LceSaveDataReader saveReader,
         string outputDir,
         string dimension,
@@ -292,7 +293,7 @@ public sealed class LceWorldConversionService
                 writers[(rx, rz)] = writer;
             }
 
-            chunkCount += DecodeLceRegionIntoWriter(regionBytes, rx, rz, writer, ref densestChunk, dimension == "overworld");
+            chunkCount += DecodeLceRegionIntoWriter(options, regionBytes, rx, rz, writer, ref densestChunk, dimension == "overworld");
         }
 
         foreach (var writer in writers.Values)
@@ -376,6 +377,7 @@ public sealed class LceWorldConversionService
     }
 
     private static int DecodeLceRegionIntoWriter(
+        ConversionOptions options,
         byte[] regionBytes,
         int regionX,
         int regionZ,
@@ -427,7 +429,7 @@ public sealed class LceWorldConversionService
             int chunkX = regionX * 32 + localX;
             int chunkZ = regionZ * 32 + localZ;
 
-            byte[] prepared = PrepareJavaChunkNbt(nbtBytes, chunkX, chunkZ);
+            byte[] prepared = PrepareJavaChunkNbt(options, nbtBytes, chunkX, chunkZ);
             writer.WriteChunk(localX, localZ, prepared);
 
             if (trackDensity)
@@ -529,7 +531,7 @@ public sealed class LceWorldConversionService
         public required int maxY { get; init; }
     }
 
-    private static byte[] PrepareJavaChunkNbt(byte[] rawNbt, int chunkX, int chunkZ)
+    private static byte[] PrepareJavaChunkNbt(ConversionOptions options, byte[] rawNbt, int chunkX, int chunkZ)
     {
         try
         {
@@ -552,7 +554,7 @@ public sealed class LceWorldConversionService
             if (level == null)
                 return legacyNbt;
 
-            NbtCompound anvilLevel = BuildAnvilLevel(level, chunkX, chunkZ);
+            NbtCompound anvilLevel = BuildAnvilLevel(options, level, chunkX, chunkZ);
             var normalized = new NbtFile(new NbtCompound(string.Empty)
             {
                 new NbtInt("DataVersion", 1343),
@@ -568,8 +570,9 @@ public sealed class LceWorldConversionService
         }
     }
 
-    private static NbtCompound BuildAnvilLevel(NbtCompound legacyLevel, int chunkX, int chunkZ)
+    private static NbtCompound BuildAnvilLevel(ConversionOptions options, NbtCompound legacyLevel, int chunkX, int chunkZ)
     {
+        bool isModernJava = options.TargetVersion.StartsWith("1.20.3") || options.TargetVersion.StartsWith("1.20.4") || options.TargetVersion.StartsWith("1.20.5") || options.TargetVersion.StartsWith("1.21");
         byte[] oldBlocks = legacyLevel.Get<NbtByteArray>("Blocks")?.Value ?? new byte[32768];
         byte[] oldData = legacyLevel.Get<NbtByteArray>("Data")?.Value ?? new byte[16384];
         byte[] oldSky = legacyLevel.Get<NbtByteArray>("SkyLight")?.Value ?? CreateFilledArray(16384, 0xFF);
@@ -595,11 +598,19 @@ public sealed class LceWorldConversionService
                         int secIndex = x + z * 16 + yInSection * 256;
 
                         byte blockId = oldBlocks[oldIndex];
+                        int oldDataNibble = GetNibble(oldData, oldIndex);
+
+                        // LCE path block ID is 198, but Java 1.12 path block is 208
+                        if (blockId == 198)
+                        {
+                            blockId = 208;
+                        }
+
                         secBlocks[secIndex] = blockId;
                         if (blockId != 0)
                             hasAnyBlock = true;
 
-                        SetNibble(secData, secIndex, GetNibble(oldData, oldIndex));
+                        SetNibble(secData, secIndex, (byte)oldDataNibble);
                         SetNibble(secSky, secIndex, GetNibble(oldSky, oldIndex));
                         SetNibble(secBlockLight, secIndex, GetNibble(oldBlockLight, oldIndex));
                     }

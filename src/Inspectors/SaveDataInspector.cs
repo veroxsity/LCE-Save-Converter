@@ -176,6 +176,69 @@ public static class SaveDataInspector
         Console.WriteLine("No readable chunk found.");
     }
 
+    public static void InspectJavaChunk(string worldPath, int chunkX, int chunkZ, string dimension = "overworld")
+    {
+        using var reader = new JavaWorldReader(worldPath);
+        string javaDimension = dimension.Trim().ToLowerInvariant() switch
+        {
+            "overworld" or "" => string.Empty,
+            "nether" or "dim-1" => "DIM-1",
+            "end" or "dim1" => "DIM1",
+            _ => throw new ArgumentOutOfRangeException(nameof(dimension), $"Unsupported dimension '{dimension}'.")
+        };
+
+        int regionX = FloorDiv(chunkX, 32);
+        int regionZ = FloorDiv(chunkZ, 32);
+        int localX = PositiveMod(chunkX, 32);
+        int localZ = PositiveMod(chunkZ, 32);
+
+        string? regionPath = reader.GetRegionFiles(javaDimension)
+            .FirstOrDefault(r => r.rx == regionX && r.rz == regionZ)
+            .path;
+
+        Console.WriteLine($"World: {worldPath}");
+        Console.WriteLine($"Dimension: {dimension}");
+        Console.WriteLine($"Chunk: ({chunkX}, {chunkZ})");
+        Console.WriteLine($"Region: ({regionX}, {regionZ}) local=({localX}, {localZ})");
+
+        if (string.IsNullOrEmpty(regionPath))
+        {
+            Console.WriteLine("Region file not found.");
+            return;
+        }
+
+        Console.WriteLine($"Region file: {regionPath}");
+        NbtCompound? root = reader.ReadChunkNbt(regionPath, localX, localZ);
+        if (root == null)
+        {
+            Console.WriteLine("Chunk not present.");
+            return;
+        }
+
+        int dataVersion = root.Get<NbtInt>("DataVersion")?.Value ?? -1;
+        Console.WriteLine($"DataVersion: {dataVersion}");
+
+        NbtCompound level = root.Get<NbtCompound>("Level") ?? root;
+        NbtList? sections = level.Get<NbtList>("Sections") ?? level.Get<NbtList>("sections");
+        if (sections == null || sections.Count == 0)
+        {
+            Console.WriteLine("No sections found in chunk.");
+            return;
+        }
+
+        bool hasLegacySectionBlocks = sections
+            .OfType<NbtCompound>()
+            .Any(s => s.Get<NbtByteArray>("Blocks") != null);
+
+        if (hasLegacySectionBlocks)
+        {
+            PrintLegacyJavaChunkGrassDiagnostics(sections);
+            return;
+        }
+
+        PrintModernJavaChunkGrassPalette(sections);
+    }
+
     public static void Inspect(string path)
     {
         byte[] fileBytes = File.ReadAllBytes(path);
@@ -398,6 +461,11 @@ public static class SaveDataInspector
             Console.WriteLine($"Trailing NBT offset: {chunk.TrailingNbtOffset}");
             Console.WriteLine($"Trailing NBT first bytes: {BitConverter.ToString(chunk.TrailingNbtPrefix)}");
         }
+
+        if (TryDecodeLceLegacyLevel(regionBytes, localX, localZ, out NbtCompound? legacyLevel))
+        {
+            PrintLegacyBlockDiagnostics(legacyLevel!);
+        }
     }
 
     public static void ScanLceCoordinates(string savePath, string dimension = "overworld")
@@ -555,6 +623,19 @@ public static class SaveDataInspector
         return output.ToArray();
     }
 
+    private static byte GetNibble(byte[] data, int index)
+    {
+        if (data.Length == 0)
+            return 0;
+
+        int byteIndex = index >> 1;
+        if (byteIndex >= data.Length)
+            return 0;
+
+        byte packed = data[byteIndex];
+        return (byte)((index & 1) == 0 ? (packed & 0x0F) : ((packed >> 4) & 0x0F));
+    }
+
     private static bool TryReadLceChunk(byte[] regionBytes, int localX, int localZ, out LceChunkInspectionResult chunk)
     {
         chunk = default;
@@ -613,6 +694,237 @@ public static class SaveDataInspector
             trailingNbtOffset,
             trailingNbtPrefix);
         return true;
+    }
+
+    private static void PrintLegacyJavaChunkGrassDiagnostics(NbtList sections)
+    {
+        int totalGrassBlocks = 0;
+        int totalTallGrass = 0;
+        int tallGrassData0 = 0;
+        int tallGrassData1 = 0;
+        int tallGrassData2 = 0;
+        int tallGrassOtherData = 0;
+
+        int[] topY = Enumerable.Repeat(-1, 256).ToArray();
+        byte[] topId = new byte[256];
+
+        foreach (NbtCompound section in sections.OfType<NbtCompound>().OrderByDescending(GetSectionY))
+        {
+            int sectionY = GetSectionY(section);
+            byte[] blocks = section.Get<NbtByteArray>("Blocks")?.Value ?? Array.Empty<byte>();
+            byte[] data = section.Get<NbtByteArray>("Data")?.Value ?? Array.Empty<byte>();
+            if (blocks.Length < 4096)
+                continue;
+
+            for (int yInSection = 15; yInSection >= 0; yInSection--)
+            {
+                int y = sectionY * 16 + yInSection;
+                for (int z = 0; z < 16; z++)
+                {
+                    for (int x = 0; x < 16; x++)
+                    {
+                        int secIndex = x + z * 16 + yInSection * 256;
+                        byte id = blocks[secIndex];
+                        if (id == 2)
+                            totalGrassBlocks++;
+                        else if (id == 31)
+                        {
+                            totalTallGrass++;
+                            byte d = GetNibble(data, secIndex);
+                            switch (d)
+                            {
+                                case 0: tallGrassData0++; break;
+                                case 1: tallGrassData1++; break;
+                                case 2: tallGrassData2++; break;
+                                default: tallGrassOtherData++; break;
+                            }
+                        }
+
+                        int column = x + z * 16;
+                        if (topY[column] >= 0 || id == 0)
+                            continue;
+
+                        topY[column] = y;
+                        topId[column] = id;
+                    }
+                }
+            }
+        }
+
+        int topGrassBlocks = topId.Count(id => id == 2);
+        int topTallGrass = topId.Count(id => id == 31);
+
+        Console.WriteLine("Chunk format: legacy section Blocks/Data");
+        Console.WriteLine($"Legacy blocks: id2(grass_block)={totalGrassBlocks}, id31(tallgrass family)={totalTallGrass}");
+        Console.WriteLine($"Top blocks in chunk columns: id2={topGrassBlocks}, id31={topTallGrass}");
+        Console.WriteLine($"id31 data split: d0={tallGrassData0}, d1={tallGrassData1}, d2={tallGrassData2}, other={tallGrassOtherData}");
+    }
+
+    private static void PrintModernJavaChunkGrassPalette(NbtList sections)
+    {
+        var names = new HashSet<string>(StringComparer.Ordinal);
+        foreach (NbtCompound section in sections.OfType<NbtCompound>())
+        {
+            NbtList? palette = section.Get<NbtList>("Palette")
+                ?? section.Get<NbtCompound>("block_states")?.Get<NbtList>("palette");
+            if (palette == null)
+                continue;
+
+            foreach (NbtTag tag in palette)
+            {
+                if (tag is not NbtCompound entry)
+                    continue;
+
+                string? name = entry.Get<NbtString>("Name")?.Value;
+                if (string.IsNullOrWhiteSpace(name))
+                    continue;
+
+                if (name.Contains("grass", StringComparison.Ordinal))
+                    names.Add(name);
+            }
+        }
+
+        Console.WriteLine("Chunk format: modern palette/block_states");
+        if (names.Count == 0)
+        {
+            Console.WriteLine("No grass-related block states found in section palettes.");
+            return;
+        }
+
+        Console.WriteLine("Grass-related block states in palettes:");
+        foreach (string name in names.OrderBy(n => n, StringComparer.Ordinal))
+            Console.WriteLine($"  {name}");
+    }
+
+    private static int GetSectionY(NbtCompound section)
+    {
+        return section.Get<NbtByte>("Y")?.Value
+            ?? section.Get<NbtInt>("Y")?.Value
+            ?? section.Get<NbtByte>("y")?.Value
+            ?? section.Get<NbtInt>("y")?.Value
+            ?? 0;
+    }
+
+    private static bool TryDecodeLceLegacyLevel(byte[] regionBytes, int localX, int localZ, out NbtCompound? legacyLevel)
+    {
+        legacyLevel = null;
+
+        int slotIndex = localX + localZ * 32;
+        int entryOffset = slotIndex * 4;
+        if (entryOffset + 4 > regionBytes.Length)
+            return false;
+
+        uint offsetEntry = BitConverter.ToUInt32(regionBytes, entryOffset);
+        if (offsetEntry == 0)
+            return false;
+
+        int sectorOffset = (int)(offsetEntry >> 8);
+        int chunkPos = sectorOffset * LceRegionSectorBytes;
+        if (chunkPos + LceChunkHeaderBytes > regionBytes.Length)
+            return false;
+
+        uint compressedLengthRaw = BitConverter.ToUInt32(regionBytes, chunkPos);
+        bool usesRle = (compressedLengthRaw & 0x80000000) != 0;
+        int compressedLength = (int)(compressedLengthRaw & 0x7FFFFFFF);
+        int decompressedLength = (int)BitConverter.ToUInt32(regionBytes, chunkPos + 4);
+        if (compressedLength <= 0 || chunkPos + LceChunkHeaderBytes + compressedLength > regionBytes.Length)
+            return false;
+
+        byte[] compressed = new byte[compressedLength];
+        Buffer.BlockCopy(regionBytes, chunkPos + LceChunkHeaderBytes, compressed, 0, compressedLength);
+
+        byte[] decompressed = usesRle
+            ? LceCompression.Decompress(compressed, decompressedLength)
+            : LceCompression.DecompressZlibOnly(compressed);
+
+        if (!LceChunkPayloadCodec.TryDecodeToLegacyNbt(decompressed, out byte[] legacyNbt))
+            return false;
+
+        var nbtFile = new NbtFile();
+        nbtFile.LoadFromBuffer(legacyNbt, 0, legacyNbt.Length, NbtCompression.None);
+        legacyLevel = nbtFile.RootTag.Get<NbtCompound>("Level") ?? nbtFile.RootTag;
+        return legacyLevel != null;
+    }
+
+    private static void PrintLegacyBlockDiagnostics(NbtCompound level)
+    {
+        byte[] blocks = level.Get<NbtByteArray>("Blocks")?.Value ?? Array.Empty<byte>();
+        byte[] data = level.Get<NbtByteArray>("Data")?.Value ?? Array.Empty<byte>();
+        if (blocks.Length < 32768)
+            return;
+
+        int totalGrassBlocks = 0;
+        int totalTallGrass = 0;
+        int topGrassBlocks = 0;
+        int topTallGrass = 0;
+
+        for (int z = 0; z < 16; z++)
+        {
+            for (int x = 0; x < 16; x++)
+            {
+                int topY = -1;
+                byte topId = 0;
+
+                for (int y = 127; y >= 0; y--)
+                {
+                    int index = ((x * 16) + z) * 128 + y;
+                    byte id = blocks[index];
+                    if (id == 2)
+                        totalGrassBlocks++;
+                    else if (id == 31)
+                        totalTallGrass++;
+
+                    if (topY >= 0 || id == 0)
+                        continue;
+
+                    topY = y;
+                    topId = id;
+                }
+
+                if (topY < 0)
+                    continue;
+
+                if (topId == 2)
+                    topGrassBlocks++;
+                else if (topId == 31)
+                    topTallGrass++;
+            }
+        }
+
+        Console.WriteLine($"Legacy blocks: id2(grass_block)={totalGrassBlocks}, id31(tallgrass family)={totalTallGrass}");
+        Console.WriteLine($"Top blocks in chunk columns: id2={topGrassBlocks}, id31={topTallGrass}");
+
+        if (totalTallGrass > 0 && data.Length >= 16384)
+        {
+            int tallGrassData0 = 0;
+            int tallGrassData1 = 0;
+            int tallGrassData2 = 0;
+            int tallGrassOtherData = 0;
+
+            for (int y = 0; y < 128; y++)
+            {
+                for (int z = 0; z < 16; z++)
+                {
+                    for (int x = 0; x < 16; x++)
+                    {
+                        int index = ((x * 16) + z) * 128 + y;
+                        if (blocks[index] != 31)
+                            continue;
+
+                        byte value = GetNibble(data, index);
+                        switch (value)
+                        {
+                            case 0: tallGrassData0++; break;
+                            case 1: tallGrassData1++; break;
+                            case 2: tallGrassData2++; break;
+                            default: tallGrassOtherData++; break;
+                        }
+                    }
+                }
+            }
+
+            Console.WriteLine($"id31 data split: d0={tallGrassData0}, d1={tallGrassData1}, d2={tallGrassData2}, other={tallGrassOtherData}");
+        }
     }
 
     private static bool IsCompressedChunkStoragePayload(byte[] payload)
