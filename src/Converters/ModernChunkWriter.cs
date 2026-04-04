@@ -9,7 +9,40 @@ namespace LceWorldConverter;
 public static class ModernChunkWriter
 {
     private static readonly Dictionary<string, string> _legacyToModernMap = new();
+    private static readonly Dictionary<string, string> _legacyToModernItemMap = new();
     private static bool _isMapLoaded = false;
+    private static bool _isItemMapLoaded = false;
+
+    private static void EnsureItemMapLoaded()
+    {
+        if (_isItemMapLoaded) return;
+
+        string mapPath = Path.Combine(AppContext.BaseDirectory, "Resources", "legacy_to_modern_item_mapping.json");
+        if (File.Exists(mapPath))
+        {
+            string json = File.ReadAllText(mapPath);
+            var map = JsonSerializer.Deserialize<Dictionary<string, string>>(json);
+            if (map != null)
+            {
+                foreach (var kvp in map)
+                {
+                    _legacyToModernItemMap[kvp.Key] = kvp.Value;
+                }
+            }
+        }
+        _isItemMapLoaded = true;
+    }
+
+    public static string GetModernItemName(short id)
+    {
+        EnsureItemMapLoaded();
+        if (_legacyToModernItemMap.TryGetValue(id.ToString(), out string? modernName))
+        {
+            return modernName;
+        }
+
+        return "minecraft:air";
+    }
 
     private static void EnsureMapLoaded()
     {
@@ -362,9 +395,10 @@ public static class ModernChunkWriter
                     else if (id == "RecordPlayer") newId = "minecraft:jukebox";
                     else if (id == "Banner") newId = "minecraft:banner";
 
-                    if (newId != null) 
+                    if (newId != null)
                     {
                         newTe["id"] = new NbtString("id", newId);
+                        ChunkConverter.SanitizeLegacyItemStacks(newTe, options.TargetVersion);
                         blockEntities.Add(newTe);
                     }
                 }

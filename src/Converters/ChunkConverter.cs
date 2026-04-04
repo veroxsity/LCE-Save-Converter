@@ -1665,12 +1665,12 @@ public static class ChunkConverter
         return false;
     }
 
-    private static void SanitizeLegacyItemStacks(NbtTag tag)
+    internal static void SanitizeLegacyItemStacks(NbtTag tag, string? targetVersion = null)
     {
         if (tag is NbtList list)
         {
             foreach (NbtTag child in list)
-                SanitizeLegacyItemStacks(child);
+                SanitizeLegacyItemStacks(child, targetVersion);
             return;
         }
 
@@ -1678,10 +1678,10 @@ public static class ChunkConverter
             return;
 
         if (LooksLikeItemStack(compound))
-            NormalizeOrClearItemStack(compound);
+            NormalizeOrClearItemStack(compound, targetVersion);
 
         foreach (NbtTag child in compound)
-            SanitizeLegacyItemStacks(child);
+            SanitizeLegacyItemStacks(child, targetVersion);
     }
 
     private static void SanitizeEntities(NbtList entities)
@@ -1901,25 +1901,60 @@ public static class ChunkConverter
                (compound.Contains("Count") || compound.Contains("Slot") || compound.Contains("Damage"));
     }
 
-    private static void NormalizeOrClearItemStack(NbtCompound stack)
+    internal static void NormalizeOrClearItemStack(NbtCompound stack, string? targetVersion = null)
     {
-        int id;
-        if (!TryReadLegacyItemId(stack, out id) || id < 0 || id > 31999)
+        bool isModern = false;
+        if (targetVersion != null)
         {
-            SetCompoundTag(stack, new NbtShort("id", 0));
-            SetCompoundTag(stack, new NbtByte("Count", 0));
-            SetCompoundTag(stack, new NbtShort("Damage", 0));
+            if (System.Version.TryParse(targetVersion, out System.Version? tv) && (tv.Major > 1 || (tv.Major == 1 && tv.Minor >= 13)))
+            {
+                isModern = true;
+            }
+        }
+
+        int id;
+        if (!TryReadLegacyItemId(stack, out id) || id <= 0 || id > 31999)
+        {
+            if (isModern)
+            {
+                SetCompoundTag(stack, new NbtString("id", "minecraft:air"));
+                SetCompoundTag(stack, new NbtByte("Count", 0));
+                stack.Remove("Damage");
+            }
+            else
+            {
+                SetCompoundTag(stack, new NbtShort("id", 0));
+                SetCompoundTag(stack, new NbtByte("Count", 0));
+                SetCompoundTag(stack, new NbtShort("Damage", 0));
+            }
             return;
         }
 
-        SetCompoundTag(stack, new NbtShort("id", (short)Math.Clamp(id, 0, short.MaxValue)));
+        if (isModern)
+        {
+            SetCompoundTag(stack, new NbtString("id", ModernChunkWriter.GetModernItemName((short)id)));
+        }
+        else
+        {
+            SetCompoundTag(stack, new NbtShort("id", (short)Math.Clamp(id, 0, short.MaxValue)));
+        }
 
         int count = stack.Get<NbtByte>("Count")?.Value ?? 1;
         SetCompoundTag(stack, new NbtByte("Count", (byte)Math.Clamp(count, 0, 64)));
 
         short damage = stack.Get<NbtShort>("Damage")?.Value
             ?? (short)Math.Clamp(stack.Get<NbtInt>("Damage")?.Value ?? 0, short.MinValue, short.MaxValue);
-        SetCompoundTag(stack, new NbtShort("Damage", damage));
+        
+        if (isModern && damage == 0)
+        {
+            // Usually modern strings don't have Damage tag for damage 0, but maintaining it as short is safe.
+            // Or we could remove it, but tools/blocks might need damage if we aren't completely remapping variants yet.
+            SetCompoundTag(stack, new NbtShort("Damage", 0));
+        }
+        else
+        {
+            SetCompoundTag(stack, new NbtShort("Damage", damage));
+        }
     }
 
     private static bool TryReadLegacyItemId(NbtCompound stack, out int id)
