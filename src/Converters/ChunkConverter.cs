@@ -1064,13 +1064,13 @@ public static class ChunkConverter
         // Used by DispenserTile, DropperTile, PistonBaseTile, PistonExtensionTile.
         return facing switch
         {
-            "down"  => 0,
-            "up"    => 1,
+            "down" => 0,
+            "up" => 1,
             "north" => 2,
             "south" => 3,
-            "west"  => 4,
-            "east"  => 5,
-            _       => 3,
+            "west" => 4,
+            "east" => 5,
+            _ => 3,
         };
     }
 
@@ -1081,10 +1081,10 @@ public static class ChunkConverter
         return facing switch
         {
             "south" => 0,
-            "west"  => 1,
+            "west" => 1,
             "north" => 2,
-            "east"  => 3,
-            _       => 0,
+            "east" => 3,
+            _ => 0,
         };
     }
 
@@ -1093,11 +1093,11 @@ public static class ChunkConverter
         // TorchTile face data: east=1, west=2, south=3, north=4 (data 5 = ceiling).
         return facing switch
         {
-            "east"  => 1,
-            "west"  => 2,
+            "east" => 1,
+            "west" => 2,
             "south" => 3,
             "north" => 4,
-            _       => 1,
+            _ => 1,
         };
     }
 
@@ -1473,24 +1473,24 @@ public static class ChunkConverter
             case "peony":
             case "tall_grass":
             case "large_fern":
-            {
-                if (GetProperty(properties, "half") == "upper")
                 {
-                    block = new LegacyBlockState(0, 0);
+                    if (GetProperty(properties, "half") == "upper")
+                    {
+                        block = new LegacyBlockState(0, 0);
+                        return true;
+                    }
+
+                    block = name switch
+                    {
+                        "sunflower" => new LegacyBlockState(37, 0),
+                        "rose_bush" => new LegacyBlockState(38, 0),
+                        "lilac" => new LegacyBlockState(38, 0),
+                        "peony" => new LegacyBlockState(38, 0),
+                        "large_fern" => new LegacyBlockState(31, 2),
+                        _ => new LegacyBlockState(31, 1),
+                    };
                     return true;
                 }
-
-                block = name switch
-                {
-                    "sunflower" => new LegacyBlockState(37, 0),
-                    "rose_bush" => new LegacyBlockState(38, 0),
-                    "lilac" => new LegacyBlockState(38, 0),
-                    "peony" => new LegacyBlockState(38, 0),
-                    "large_fern" => new LegacyBlockState(31, 2),
-                    _ => new LegacyBlockState(31, 1),
-                };
-                return true;
-            }
         }
 
         string? type = GetProperty(properties, "type");
@@ -1863,7 +1863,7 @@ public static class ChunkConverter
             AppendJsonText(doc.RootElement, builder);
             return builder.ToString();
         }
-        catch
+        catch (JsonException)
         {
             return raw.Trim('"');
         }

@@ -600,12 +600,6 @@ public sealed class LceWorldConversionService
                         byte blockId = oldBlocks[oldIndex];
                         int oldDataNibble = GetNibble(oldData, oldIndex);
 
-                        // LCE path block ID is 198, but Java 1.12 path block is 208
-                        if (blockId == 198)
-                        {
-                            blockId = 208;
-                        }
-
                         secBlocks[secIndex] = blockId;
                         if (blockId != 0)
                             hasAnyBlock = true;
