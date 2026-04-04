@@ -424,6 +424,12 @@ public static class ModernChunkWriter
                 blockEntities.Add(bedTe);
             }
         }
+
+        // LCE double-chest inventory ownership is mirrored for north/east facings.
+        // Keep blockstate orientation logic intact and only swap TE payload ownership
+        // for those specific facings so GUI top/bottom rows match visual left/right.
+        ReconcileDoubleChestInventories(blockEntities, oldBlocks, oldData);
+
         root.Add(blockEntities);
         root.Add(sections);
 
@@ -439,5 +445,131 @@ public static class ModernChunkWriter
             return (byte)(data[byteIndex] & 0x0F);
         else
             return (byte)((data[byteIndex] >> 4) & 0x0F);
+    }
+
+    private static void ReconcileDoubleChestInventories(NbtList blockEntities, byte[] oldBlocks, byte[] oldData)
+    {
+        var byPos = new Dictionary<(int x, int y, int z), NbtCompound>();
+        foreach (NbtTag tag in blockEntities)
+        {
+            if (tag is not NbtCompound te)
+                continue;
+
+            string id = te.Get<NbtString>("id")?.Value ?? string.Empty;
+            if (id != "minecraft:chest" && id != "minecraft:trapped_chest")
+                continue;
+
+            if (!TryGetTePos(te, out int x, out int y, out int z))
+                continue;
+
+            byPos[(x, y, z)] = te;
+        }
+
+        var visited = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var kvp in byPos)
+        {
+            int x = kvp.Key.x;
+            int y = kvp.Key.y;
+            int z = kvp.Key.z;
+            NbtCompound te = kvp.Value;
+
+            if (!TryGetLegacyChestFacing(oldBlocks, oldData, x, y, z, out string facing))
+                continue;
+
+            if (facing != "north" && facing != "east")
+                continue;
+
+            (int nx, int ny, int nz)? neighbor = null;
+            if (facing == "north" || facing == "south")
+            {
+                if (byPos.ContainsKey((x - 1, y, z))) neighbor = (x - 1, y, z);
+                else if (byPos.ContainsKey((x + 1, y, z))) neighbor = (x + 1, y, z);
+            }
+            else
+            {
+                if (byPos.ContainsKey((x, y, z - 1))) neighbor = (x, y, z - 1);
+                else if (byPos.ContainsKey((x, y, z + 1))) neighbor = (x, y, z + 1);
+            }
+
+            if (neighbor == null)
+                continue;
+
+            int ax = x;
+            int ay = y;
+            int az = z;
+            int bx = neighbor.Value.nx;
+            int by = neighbor.Value.ny;
+            int bz = neighbor.Value.nz;
+            string pairKey = ax < bx || (ax == bx && (ay < by || (ay == by && az < bz)))
+                ? $"{ax},{ay},{az}|{bx},{by},{bz}"
+                : $"{bx},{by},{bz}|{ax},{ay},{az}";
+
+            if (!visited.Add(pairKey))
+                continue;
+
+            NbtCompound other = byPos[(bx, by, bz)];
+            NbtList? aItems = GetChestItemsList(te);
+            NbtList? bItems = GetChestItemsList(other);
+
+            if (aItems == null && bItems == null)
+                continue;
+
+            SetChestItemsList(te, bItems);
+            SetChestItemsList(other, aItems);
+        }
+    }
+
+    private static bool TryGetTePos(NbtCompound te, out int x, out int y, out int z)
+    {
+        x = te.Get<NbtInt>("x")?.Value ?? int.MinValue;
+        y = te.Get<NbtInt>("y")?.Value ?? int.MinValue;
+        z = te.Get<NbtInt>("z")?.Value ?? int.MinValue;
+        return x != int.MinValue && y != int.MinValue && z != int.MinValue;
+    }
+
+    private static bool TryGetLegacyChestFacing(byte[] oldBlocks, byte[] oldData, int worldX, int y, int worldZ, out string facing)
+    {
+        facing = string.Empty;
+        if (y < 0 || y > 127)
+            return false;
+
+        int lx = ((worldX % 16) + 16) % 16;
+        int lz = ((worldZ % 16) + 16) % 16;
+        int index = ((lx * 16) + lz) * 128 + y;
+        if (index < 0 || index >= oldBlocks.Length)
+            return false;
+
+        byte id = oldBlocks[index];
+        if (id != 54 && id != 146)
+            return false;
+
+        byte meta = GetNibble(oldData, index);
+        facing = meta switch
+        {
+            2 => "north",
+            3 => "south",
+            4 => "west",
+            5 => "east",
+            _ => string.Empty,
+        };
+
+        return facing.Length > 0;
+    }
+
+    private static NbtList? GetChestItemsList(NbtCompound te)
+    {
+        return te.Get<NbtList>("Items") ?? te.Get<NbtList>("items");
+    }
+
+    private static void SetChestItemsList(NbtCompound te, NbtList? items)
+    {
+        te.Remove("Items");
+        te.Remove("items");
+        if (items != null)
+        {
+            var cloned = (NbtList)items.Clone();
+            cloned.Name = "Items";
+            te.Add(cloned);
+        }
     }
 }
