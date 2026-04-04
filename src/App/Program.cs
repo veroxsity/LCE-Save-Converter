@@ -42,6 +42,22 @@ internal static class Program
             return 0;
         }
 
+        if (args.Length > 0 && args[0] == "--scan-java-chest-items")
+        {
+            if (args.Length < 2)
+            {
+                Console.WriteLine("Usage: LceWorldConverter --scan-java-chest-items <java_world_path> [overworld|nether|end] [max_printed]");
+                return 1;
+            }
+
+            int maxPrinted = 30;
+            if (args.Length > 3)
+                int.TryParse(args[3], out maxPrinted);
+
+            SaveDataInspector.ScanJavaChestItems(args[1], args.Length > 2 ? args[2] : "overworld", maxPrinted);
+            return 0;
+        }
+
         if (args.Length > 0 && args[0] == "--inspect")
         {
             if (args.Length < 2)
@@ -89,6 +105,18 @@ internal static class Program
             }
 
             SaveDataInspector.ScanLceTrailingNbt(args[1], args.Length > 2 ? args[2] : "overworld");
+            return 0;
+        }
+
+        if (args.Length > 0 && args[0] == "--scan-lce-chest-item-mappings")
+        {
+            if (args.Length < 2)
+            {
+                Console.WriteLine("Usage: LceWorldConverter --scan-lce-chest-item-mappings <saveData.ms_path> [overworld|nether|end]");
+                return 1;
+            }
+
+            SaveDataInspector.ScanLceChestItemMappings(args[1], args.Length > 2 ? args[2] : "overworld");
             return 0;
         }
 

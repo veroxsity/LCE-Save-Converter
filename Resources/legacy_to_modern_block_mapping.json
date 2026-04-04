@@ -393,7 +393,7 @@
     "141:3":  "minecraft:carrots[age=3]",
     "3:0":  "minecraft:dirt",
     "59:4":  "minecraft:wheat[age=4]",
-    "52:0":  "minecraft:vault",
+    "52:0":  "minecraft:spawner",
     "63:3":  "minecraft:oak_sign[rotation=3]",
     "141:7":  "minecraft:carrots[age=7]",
     "63:10":  "minecraft:oak_sign[rotation=10]",

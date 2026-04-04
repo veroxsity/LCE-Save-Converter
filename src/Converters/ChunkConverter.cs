@@ -1669,8 +1669,38 @@ public static class ChunkConverter
     {
         if (tag is NbtList list)
         {
-            foreach (NbtTag child in list)
+            for (int i = list.Count - 1; i >= 0; i--)
+            {
+                NbtTag child = list[i];
                 SanitizeLegacyItemStacks(child, targetVersion);
+
+                if (child is NbtCompound comp && LooksLikeItemStack(comp))
+                {
+                    string? idTagStr = (comp.Get("id") as NbtString)?.Value;
+                    short idTagShort = (comp.Get("id") as NbtShort)?.Value ?? -1;
+                    byte countByte = (comp.Get("Count") as NbtByte)?.Value ?? 1;
+                    int countInt = (comp.Get("count") as NbtInt)?.Value ?? 1;
+
+                    if (idTagStr == "minecraft:air" || idTagShort == 0 || (comp.Contains("Count") && countByte == 0) || (comp.Contains("count") && countInt == 0))
+                    {
+                        if (list.Name == "Items" || list.Name == "items")
+                            list.RemoveAt(i);
+                        else
+                        {
+                            comp.Clear();
+                            if (System.Version.TryParse(targetVersion ?? "", out System.Version? tv) && (tv.Major > 1 || (tv.Major == 1 && tv.Minor > 20) || (tv.Major == 1 && tv.Minor == 20 && tv.Build >= 5)))
+                            {
+                                // 1.20.5+ uses empty compounds for empty array slots
+                            }
+                            else
+                            {
+                                comp.Add(new NbtString("id", "minecraft:air"));
+                                comp.Add(new NbtByte("Count", 0));
+                            }
+                        }
+                    }
+                }
+            }
             return;
         }
 
@@ -1712,9 +1742,12 @@ public static class ChunkConverter
 
             NormalizeOrClearItemStack(item);
 
-            short itemId = item.Get<NbtShort>("id")?.Value ?? 0;
-            int count = item.Get<NbtByte>("Count")?.Value ?? 0;
-            if (itemId <= 0 || count <= 0)
+            string? idTagStr = (item.Get("id") as NbtString)?.Value;
+            short idTagShort = (item.Get("id") as NbtShort)?.Value ?? 0;
+            int countByte = (item.Get("Count") as NbtByte)?.Value ?? 0;
+            int countInt = (item.Get("count") as NbtInt)?.Value ?? 0;
+
+            if ((idTagShort <= 0 && (string.IsNullOrEmpty(idTagStr) || idTagStr == "minecraft:air")) || (countByte <= 0 && countInt <= 0))
                 entities.RemoveAt(i);
         }
     }
@@ -1898,63 +1931,233 @@ public static class ChunkConverter
     private static bool LooksLikeItemStack(NbtCompound compound)
     {
         return compound.Contains("id") &&
-               (compound.Contains("Count") || compound.Contains("Slot") || compound.Contains("Damage"));
-    }
-
-    internal static void NormalizeOrClearItemStack(NbtCompound stack, string? targetVersion = null)
-    {
-        bool isModern = false;
-        if (targetVersion != null)
-        {
-            if (System.Version.TryParse(targetVersion, out System.Version? tv) && (tv.Major > 1 || (tv.Major == 1 && tv.Minor >= 13)))
-            {
-                isModern = true;
-            }
+                   (compound.Contains("Count") || compound.Contains("count") || compound.Contains("Slot") || compound.Contains("Damage"));
         }
 
-        int id;
-        if (!TryReadLegacyItemId(stack, out id) || id <= 0 || id > 31999)
+        internal static void NormalizeOrClearItemStack(NbtCompound stack, string? targetVersion = null)
         {
+            bool isModern = false;
+            bool isPost120_5 = false;
+            if (targetVersion != null)
+            {
+                if (System.Version.TryParse(targetVersion, out System.Version? tv))
+                {
+                    if (tv.Major > 1 || (tv.Major == 1 && tv.Minor >= 13))
+                        isModern = true;
+
+                    // Support e.g. 1.20.5, 1.21, etc
+                    if (tv.Major > 1 || (tv.Major == 1 && tv.Minor > 20) || (tv.Major == 1 && tv.Minor == 20 && tv.Build >= 5))
+                        isPost120_5 = true;
+                }
+            }
+
+            int id;
+            if (!TryReadLegacyItemId(stack, out id) || id <= 0 || id > 31999)
+            {
+                if (isPost120_5)
+                {
+                    SetCompoundTag(stack, new NbtString("id", "minecraft:air"));
+                    SetCompoundTag(stack, new NbtInt("count", 0));
+                    stack.Remove("Count");
+                    stack.Remove("Damage");
+                }
+                else if (isModern)
+                {
+                    SetCompoundTag(stack, new NbtString("id", "minecraft:air"));
+                    SetCompoundTag(stack, new NbtByte("Count", 0));
+                    stack.Remove("Damage");
+                }
+                else
+                {
+                    SetCompoundTag(stack, new NbtShort("id", 0));
+                    SetCompoundTag(stack, new NbtByte("Count", 0));
+                    SetCompoundTag(stack, new NbtShort("Damage", 0));
+                }
+                return;
+            }
+
+            short damage = 0;
+            if (stack.Get("Damage") is NbtShort ds) damage = ds.Value;
+            else if (stack.Get("Damage") is NbtInt di) damage = (short)Math.Clamp(di.Value, short.MinValue, short.MaxValue);
+
             if (isModern)
             {
-                SetCompoundTag(stack, new NbtString("id", "minecraft:air"));
-                SetCompoundTag(stack, new NbtByte("Count", 0));
-                stack.Remove("Damage");
+                string mappedId = ModernChunkWriter.GetModernItemName((short)id);
+                string newId = NormalizeModernItemId(mappedId, damage, out short normalizedDamage);
+                damage = normalizedDamage;
+                SetCompoundTag(stack, new NbtString("id", newId));
             }
             else
             {
-                SetCompoundTag(stack, new NbtShort("id", 0));
-                SetCompoundTag(stack, new NbtByte("Count", 0));
+                SetCompoundTag(stack, new NbtShort("id", (short)Math.Clamp(id, 0, short.MaxValue)));
+            }
+
+            int count = 1;
+            if (stack.Get("Count") is NbtByte cb) count = cb.Value;
+            else if (stack.Get("Count") is NbtInt ci) count = ci.Value;
+            else if (stack.Get("count") is NbtInt ci2) count = ci2.Value;
+            else if (stack.Get("count") is NbtByte cb2) count = cb2.Value;
+
+            if (isPost120_5)
+            {
+                SetCompoundTag(stack, new NbtInt("count", Math.Clamp(count, 0, 64)));
+                if (stack.Contains("Count")) stack.Remove("Count");
+            }
+            else
+            {
+                SetCompoundTag(stack, new NbtByte("Count", (byte)Math.Clamp(count, 0, 64)));
+                if (stack.Contains("count")) stack.Remove("count");
+            }
+
+            if (isPost120_5)
+            {
+                stack.Remove("Damage");
+                if (damage > 0)
+                {
+                    NbtCompound? components = stack.Get<NbtCompound>("components");
+                    if (components == null)
+                    {
+                        components = new NbtCompound("components");
+                        stack.Add(components);
+                    }
+                    SetCompoundTag(components, new NbtInt("minecraft:damage", damage));
+                }
+            }
+            else if (isModern && damage == 0)
+            {
                 SetCompoundTag(stack, new NbtShort("Damage", 0));
             }
-            return;
+            else
+            {
+                SetCompoundTag(stack, new NbtShort("Damage", damage));
+            }
         }
 
-        if (isModern)
+    private static string NormalizeModernItemId(string mappedId, short legacyDamage, out short normalizedDamage)
+    {
+        normalizedDamage = legacyDamage;
+
+        string id = mappedId switch
         {
-            SetCompoundTag(stack, new NbtString("id", ModernChunkWriter.GetModernItemName((short)id)));
+            "minecraft:red_stone" => "minecraft:redstone",
+            "minecraft:seeds_wheat" => "minecraft:wheat_seeds",
+            "minecraft:seeds_pumpkin" => "minecraft:pumpkin_seeds",
+            "minecraft:seeds_melon" => "minecraft:melon_seeds",
+            "minecraft:netherwart_seeds" => "minecraft:nether_wart",
+            "minecraft:pork_chop_raw" => "minecraft:porkchop",
+            "minecraft:pork_chop_cooked" => "minecraft:cooked_porkchop",
+            "minecraft:snow_ball" => "minecraft:snowball",
+            "minecraft:yellow_dust" => "minecraft:glowstone_dust",
+            "minecraft:speckled_melon" => "minecraft:glistering_melon_slice",
+            "minecraft:minecart_chest" => "minecraft:chest_minecart",
+            "minecraft:minecart_furnace" => "minecraft:furnace_minecart",
+            "minecraft:minecart_tnt" => "minecraft:tnt_minecart",
+            "minecraft:minecart_hopper" => "minecraft:hopper_minecart",
+            "minecraft:door_wood" => "minecraft:oak_door",
+            "minecraft:sign" => "minecraft:oak_sign",
+            "minecraft:writing_book" => "minecraft:writable_book",
+            "minecraft:fireworks" => "minecraft:firework_rocket",
+            "minecraft:fireworks_charge" => "minecraft:firework_star",
+            "minecraft:netherbrick" => "minecraft:nether_brick",
+            "minecraft:nether_quartz" => "minecraft:quartz",
+            "minecraft:record_01" => "minecraft:music_disc_13",
+            "minecraft:record_02" => "minecraft:music_disc_cat",
+            "minecraft:record_03" => "minecraft:music_disc_blocks",
+            "minecraft:record_04" => "minecraft:music_disc_chirp",
+            "minecraft:record_05" => "minecraft:music_disc_far",
+            "minecraft:record_06" => "minecraft:music_disc_mall",
+            "minecraft:record_07" => "minecraft:music_disc_mellohi",
+            "minecraft:record_08" => "minecraft:music_disc_wait",
+            "minecraft:record_09" => "minecraft:music_disc_stal",
+            "minecraft:record_10" => "minecraft:music_disc_strad",
+            "minecraft:record_11" => "minecraft:music_disc_ward",
+            "minecraft:record_12" => "minecraft:music_disc_11",
+            _ => mappedId,
+        };
+
+        if (id.StartsWith("minecraft:pick_axe_", StringComparison.Ordinal))
+        {
+            string mat = id[20..];
+            if (mat == "wood") mat = "wooden";
+            if (mat == "gold") mat = "golden";
+            id = $"minecraft:{mat}_pickaxe";
         }
-        else
+        else if (id.StartsWith("minecraft:hatchet_", StringComparison.Ordinal))
         {
-            SetCompoundTag(stack, new NbtShort("id", (short)Math.Clamp(id, 0, short.MaxValue)));
+            string mat = id[17..];
+            if (mat == "wood") mat = "wooden";
+            if (mat == "gold") mat = "golden";
+            id = $"minecraft:{mat}_axe";
+        }
+        else if (id.StartsWith("minecraft:shovel_", StringComparison.Ordinal))
+        {
+            string mat = id[16..];
+            if (mat == "wood") mat = "wooden";
+            if (mat == "gold") mat = "golden";
+            id = $"minecraft:{mat}_shovel";
+        }
+        else if (id.StartsWith("minecraft:sword_", StringComparison.Ordinal))
+        {
+            string mat = id[15..];
+            if (mat == "wood") mat = "wooden";
+            if (mat == "gold") mat = "golden";
+            id = $"minecraft:{mat}_sword";
         }
 
-        int count = stack.Get<NbtByte>("Count")?.Value ?? 1;
-        SetCompoundTag(stack, new NbtByte("Count", (byte)Math.Clamp(count, 0, 64)));
+        if (id == "minecraft:coal" && legacyDamage == 1)
+        {
+            normalizedDamage = 0;
+            return "minecraft:charcoal";
+        }
 
-        short damage = stack.Get<NbtShort>("Damage")?.Value
-            ?? (short)Math.Clamp(stack.Get<NbtInt>("Damage")?.Value ?? 0, short.MinValue, short.MaxValue);
-        
-        if (isModern && damage == 0)
+        if (id == "minecraft:dye_powder")
         {
-            // Usually modern strings don't have Damage tag for damage 0, but maintaining it as short is safe.
-            // Or we could remove it, but tools/blocks might need damage if we aren't completely remapping variants yet.
-            SetCompoundTag(stack, new NbtShort("Damage", 0));
+            normalizedDamage = 0;
+            return legacyDamage switch
+            {
+                0 => "minecraft:black_dye",
+                1 => "minecraft:red_dye",
+                2 => "minecraft:green_dye",
+                3 => "minecraft:brown_dye",
+                4 => "minecraft:blue_dye",
+                5 => "minecraft:purple_dye",
+                6 => "minecraft:cyan_dye",
+                7 => "minecraft:light_gray_dye",
+                8 => "minecraft:gray_dye",
+                9 => "minecraft:pink_dye",
+                10 => "minecraft:lime_dye",
+                11 => "minecraft:yellow_dye",
+                12 => "minecraft:light_blue_dye",
+                13 => "minecraft:magenta_dye",
+                14 => "minecraft:orange_dye",
+                15 => "minecraft:white_dye",
+                _ => "minecraft:black_dye",
+            };
         }
-        else
+
+        if (id == "minecraft:fish_raw")
         {
-            SetCompoundTag(stack, new NbtShort("Damage", damage));
+            normalizedDamage = 0;
+            return legacyDamage switch
+            {
+                1 => "minecraft:salmon",
+                2 => "minecraft:tropical_fish",
+                3 => "minecraft:pufferfish",
+                _ => "minecraft:cod",
+            };
         }
+
+        if (id == "minecraft:fish_cooked")
+        {
+            normalizedDamage = 0;
+            return legacyDamage switch
+            {
+                1 => "minecraft:cooked_salmon",
+                _ => "minecraft:cooked_cod",
+            };
+        }
+
+        return id;
     }
 
     private static bool TryReadLegacyItemId(NbtCompound stack, out int id)

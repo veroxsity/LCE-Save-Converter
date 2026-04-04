@@ -219,6 +219,8 @@ public static class SaveDataInspector
         Console.WriteLine($"DataVersion: {dataVersion}");
 
         NbtCompound level = root.Get<NbtCompound>("Level") ?? root;
+        PrintJavaBlockEntityDiagnostics(level);
+
         NbtList? sections = level.Get<NbtList>("Sections") ?? level.Get<NbtList>("sections");
         if (sections == null || sections.Count == 0)
         {
@@ -237,6 +239,163 @@ public static class SaveDataInspector
         }
 
         PrintModernJavaChunkGrassPalette(sections);
+    }
+
+    public static void ScanJavaChestItems(string worldPath, string dimension = "overworld", int maxPrinted = 30)
+    {
+        using var reader = new JavaWorldReader(worldPath);
+        string javaDimension = dimension.Trim().ToLowerInvariant() switch
+        {
+            "overworld" or "" => string.Empty,
+            "nether" or "dim-1" => "DIM-1",
+            "end" or "dim1" => "DIM1",
+            _ => throw new ArgumentOutOfRangeException(nameof(dimension), $"Unsupported dimension '{dimension}'.")
+        };
+
+        int scannedChunks = 0;
+        int totalBlockEntities = 0;
+        int totalChests = 0;
+        int chestsWithItems = 0;
+        int totalChestItemEntries = 0;
+        int printed = 0;
+
+        foreach (var (rx, rz, regionPath) in reader.GetRegionFiles(javaDimension))
+        {
+            for (int localZ = 0; localZ < 32; localZ++)
+            {
+                for (int localX = 0; localX < 32; localX++)
+                {
+                    NbtCompound? root;
+                    try
+                    {
+                        root = reader.ReadChunkNbt(regionPath, localX, localZ);
+                    }
+                    catch
+                    {
+                        continue;
+                    }
+
+                    if (root == null)
+                        continue;
+
+                    scannedChunks++;
+                    NbtCompound level = root.Get<NbtCompound>("Level") ?? root;
+                    NbtList? blockEntities = level.Get<NbtList>("block_entities") ?? level.Get<NbtList>("TileEntities");
+                    if (blockEntities == null)
+                        continue;
+
+                    int chunkX = rx * 32 + localX;
+                    int chunkZ = rz * 32 + localZ;
+
+                    foreach (NbtTag tag in blockEntities)
+                    {
+                        if (tag is not NbtCompound te)
+                            continue;
+
+                        totalBlockEntities++;
+                        string id = te.Get<NbtString>("id")?.Value ?? string.Empty;
+                        if (id is not "minecraft:chest" and not "minecraft:trapped_chest" and not "Chest" and not "TrappedChest")
+                            continue;
+
+                        totalChests++;
+                        var items = te.Get<NbtList>("Items") ?? te.Get<NbtList>("items");
+                        int itemCount = items?.Count ?? 0;
+                        totalChestItemEntries += itemCount;
+                        if (itemCount > 0)
+                            chestsWithItems++;
+                        else if (printed < maxPrinted)
+                        {
+                            int x = te.Get<NbtInt>("x")?.Value ?? 0;
+                            int y = te.Get<NbtInt>("y")?.Value ?? 0;
+                            int z = te.Get<NbtInt>("z")?.Value ?? 0;
+                            Console.WriteLine($"Empty chest tile entity at chunk ({chunkX},{chunkZ}) block ({x},{y},{z})");
+                            printed++;
+                        }
+                    }
+                }
+            }
+        }
+
+        Console.WriteLine($"Scanned chunks: {scannedChunks}");
+        Console.WriteLine($"Block entities total: {totalBlockEntities}");
+        Console.WriteLine($"Chests total: {totalChests}");
+        Console.WriteLine($"Chests with items: {chestsWithItems}");
+        Console.WriteLine($"Total chest item entries: {totalChestItemEntries}");
+    }
+
+    private static void PrintJavaBlockEntityDiagnostics(NbtCompound level)
+    {
+        var blockEntities = level.Get<NbtList>("block_entities") ?? level.Get<NbtList>("TileEntities");
+        if (blockEntities == null)
+        {
+            Console.WriteLine("No block entities in chunk.");
+            return;
+        }
+
+        int total = 0;
+        int chests = 0;
+        int vaults = 0;
+        int spawners = 0;
+        int chestsWithItems = 0;
+        int chestItemsTotal = 0;
+        string? firstChestSample = null;
+        string? firstChestIds = null;
+
+        foreach (NbtTag tag in blockEntities)
+        {
+            if (tag is not NbtCompound te)
+                continue;
+
+            total++;
+            string id = te.Get<NbtString>("id")?.Value ?? string.Empty;
+            if (id == "minecraft:vault") vaults++;
+            if (id == "minecraft:mob_spawner" || id == "minecraft:spawner") spawners++;
+
+            if (id is "minecraft:chest" or "minecraft:trapped_chest" or "Chest" or "TrappedChest")
+            {
+                chests++;
+                var items = te.Get<NbtList>("Items") ?? te.Get<NbtList>("items");
+                int itemCount = items?.Count ?? 0;
+                chestItemsTotal += itemCount;
+                if (itemCount > 0)
+                    chestsWithItems++;
+
+                if (firstChestSample == null)
+                {
+                    if (items != null && items.Count > 0 && items[0] is NbtCompound first)
+                    {
+                        string idType = first.Get("id")?.TagType.ToString() ?? "<none>";
+                        string countType = first.Get("Count")?.TagType.ToString() ?? first.Get("count")?.TagType.ToString() ?? "<none>";
+                        firstChestSample = $"firstItem idType={idType}, countType={countType}, hasSlot={first.Contains("Slot")}";
+
+                        var ids = new List<string>();
+                        foreach (NbtTag it in items)
+                        {
+                            if (it is not NbtCompound ic)
+                                continue;
+                            string iid = (ic.Get("id") as NbtString)?.Value ?? (ic.Get("id") as NbtShort)?.Value.ToString() ?? "<none>";
+                            ids.Add(iid);
+                            if (ids.Count >= 12)
+                                break;
+                        }
+                        firstChestIds = string.Join(", ", ids);
+                    }
+                    else
+                    {
+                        firstChestSample = "no item entries";
+                        firstChestIds = string.Empty;
+                    }
+                }
+            }
+        }
+
+        Console.WriteLine($"Block entities: total={total}, chests={chests}, spawners={spawners}, vaults={vaults}");
+        if (chests > 0)
+            Console.WriteLine($"Chest items: chestsWithItems={chestsWithItems}/{chests}, totalItemEntries={chestItemsTotal}");
+        if (firstChestSample != null)
+            Console.WriteLine($"Chest sample: {firstChestSample}");
+        if (!string.IsNullOrEmpty(firstChestIds))
+            Console.WriteLine($"Chest sample item ids: {firstChestIds}");
     }
 
     public static void Inspect(string path)
@@ -597,6 +756,103 @@ public static class SaveDataInspector
         Console.WriteLine($"Invalid trailing NBT chunks: {invalid}");
     }
 
+    public static void ScanLceChestItemMappings(string savePath, string dimension = "overworld")
+    {
+        var saveReader = new LceSaveDataReader(savePath);
+        string regionPrefix = GetLceRegionPrefix(dimension);
+
+        int scannedChunks = 0;
+        int chestCount = 0;
+        int itemEntryCount = 0;
+
+        var itemIdCounts = new Dictionary<int, int>();
+        var unmappedIdCounts = new Dictionary<int, int>();
+
+        foreach (var entry in saveReader.EnumerateEntries()
+            .Where(e => e.Length > LceRegionSectorBytes * 2 && e.Name.EndsWith(".mcr", StringComparison.OrdinalIgnoreCase))
+            .OrderBy(e => e.Name, StringComparer.OrdinalIgnoreCase))
+        {
+            if (!entry.Name.StartsWith(regionPrefix, StringComparison.OrdinalIgnoreCase))
+                continue;
+
+            if (!saveReader.TryGetFileBytes(entry.Name, out byte[] regionBytes))
+                continue;
+
+            for (int localZ = 0; localZ < 32; localZ++)
+            {
+                for (int localX = 0; localX < 32; localX++)
+                {
+                    if (!TryDecodeLceLegacyLevel(regionBytes, localX, localZ, out NbtCompound? legacyLevel) || legacyLevel == null)
+                        continue;
+
+                    scannedChunks++;
+                    var tileEntities = legacyLevel.Get<NbtList>("TileEntities");
+                    if (tileEntities == null)
+                        continue;
+
+                    foreach (NbtTag teTag in tileEntities)
+                    {
+                        if (teTag is not NbtCompound te)
+                            continue;
+
+                        string id = te.Get<NbtString>("id")?.Value ?? string.Empty;
+                        if (id is not "Chest" and not "TrappedChest" and not "minecraft:chest" and not "minecraft:trapped_chest")
+                            continue;
+
+                        chestCount++;
+                        var items = te.Get<NbtList>("Items") ?? te.Get<NbtList>("items");
+                        if (items == null)
+                            continue;
+
+                        foreach (NbtTag itemTag in items)
+                        {
+                            if (itemTag is not NbtCompound item)
+                                continue;
+
+                            int itemId = 0;
+                            if (item.Get("id") is NbtShort s)
+                                itemId = s.Value;
+                            else if (item.Get("id") is NbtInt i)
+                                itemId = i.Value;
+                            else if (item.Get("id") is NbtByte b)
+                                itemId = b.Value;
+
+                            if (itemId <= 0)
+                                continue;
+
+                            itemEntryCount++;
+
+                            if (!itemIdCounts.TryAdd(itemId, 1))
+                                itemIdCounts[itemId]++;
+
+                            string mappedName = ModernChunkWriter.GetModernItemName((short)itemId);
+                            if (mappedName == "minecraft:air")
+                            {
+                                if (!unmappedIdCounts.TryAdd(itemId, 1))
+                                    unmappedIdCounts[itemId]++;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        Console.WriteLine($"Scanned chunks: {scannedChunks}");
+        Console.WriteLine($"Chests scanned: {chestCount}");
+        Console.WriteLine($"Chest item entries scanned: {itemEntryCount}");
+        Console.WriteLine($"Distinct chest item IDs: {itemIdCounts.Count}");
+
+        if (unmappedIdCounts.Count == 0)
+        {
+            Console.WriteLine("All chest item IDs are mapped.");
+            return;
+        }
+
+        Console.WriteLine($"Unmapped chest item IDs: {unmappedIdCounts.Count}");
+        foreach (var kvp in unmappedIdCounts.OrderByDescending(k => k.Value).ThenBy(k => k.Key))
+            Console.WriteLine($"  id={kvp.Key} occurrences={kvp.Value}");
+    }
+
     private static uint ReadUInt32BigEndian(byte[] bytes, int offset)
     {
         return ((uint)bytes[offset] << 24)
@@ -893,6 +1149,54 @@ public static class SaveDataInspector
 
         Console.WriteLine($"Legacy blocks: id2(grass_block)={totalGrassBlocks}, id31(tallgrass family)={totalTallGrass}");
         Console.WriteLine($"Top blocks in chunk columns: id2={topGrassBlocks}, id31={topTallGrass}");
+
+        var tileEntities = level.Get<NbtList>("TileEntities");
+        if (tileEntities != null)
+        {
+            int chestCount = 0;
+            int chestWithItems = 0;
+            int chestItemEntries = 0;
+            int spawnerCount = 0;
+            string? firstChestSample = null;
+
+            foreach (NbtTag tag in tileEntities)
+            {
+                if (tag is not NbtCompound te)
+                    continue;
+
+                string id = te.Get<NbtString>("id")?.Value ?? string.Empty;
+                if (id is "MobSpawner" or "minecraft:mob_spawner")
+                    spawnerCount++;
+
+                if (id is "Chest" or "TrappedChest" or "minecraft:chest" or "minecraft:trapped_chest")
+                {
+                    chestCount++;
+                    var items = te.Get<NbtList>("Items") ?? te.Get<NbtList>("items");
+                    int itemCount = items?.Count ?? 0;
+                    chestItemEntries += itemCount;
+                    if (itemCount > 0)
+                        chestWithItems++;
+
+                    if (firstChestSample == null)
+                    {
+                        if (items != null && items.Count > 0 && items[0] is NbtCompound first)
+                        {
+                            string idType = first.Get("id")?.TagType.ToString() ?? "<none>";
+                            string countType = first.Get("Count")?.TagType.ToString() ?? first.Get("count")?.TagType.ToString() ?? "<none>";
+                            firstChestSample = $"firstItem idType={idType}, countType={countType}, hasSlot={first.Contains("Slot")}";
+                        }
+                        else
+                        {
+                            firstChestSample = "no item entries";
+                        }
+                    }
+                }
+            }
+
+            Console.WriteLine($"Legacy tile entities: total={tileEntities.Count}, chests={chestCount}, chestsWithItems={chestWithItems}, chestItemEntries={chestItemEntries}, spawners={spawnerCount}");
+            if (firstChestSample != null)
+                Console.WriteLine($"Legacy chest sample: {firstChestSample}");
+        }
 
         if (totalTallGrass > 0 && data.Length >= 16384)
         {

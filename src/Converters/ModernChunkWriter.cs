@@ -367,7 +367,7 @@ public static class ModernChunkWriter
                 if (newTe.TryGet<NbtString>("id", out var idTag))
                 {
                     string id = idTag.Value;
-                    string newId = null;
+                    string? newId = null;
                     if (id == "Chest") newId = "minecraft:chest";
                     else if (id == "Furnace") newId = "minecraft:furnace";
                     else if (id == "BrewingStand") newId = "minecraft:brewing_stand";
@@ -394,6 +394,10 @@ public static class ModernChunkWriter
                     else if (id == "Comparator") newId = "minecraft:comparator";
                     else if (id == "RecordPlayer") newId = "minecraft:jukebox";
                     else if (id == "Banner") newId = "minecraft:banner";
+
+                    // Preserve already-modern IDs from trailing/dynamic NBT payloads.
+                    if (newId == null && id.StartsWith("minecraft:", StringComparison.OrdinalIgnoreCase))
+                        newId = id;
 
                     if (newId != null)
                     {
