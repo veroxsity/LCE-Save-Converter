@@ -186,7 +186,7 @@ public sealed class LceWorldConversionService
         if (!saveReader.TryReadLevelDat(out NbtCompound lceLevelDat))
             throw new InvalidDataException("Input saveData.ms does not contain a readable level.dat entry.");
 
-        NbtCompound? embeddedPlayer = TryReadPrimaryLcePlayer(saveReader);
+        NbtCompound? embeddedPlayer = TryReadPrimaryLcePlayer(saveReader, options.TargetVersion);
         if (embeddedPlayer != null)
             logger.Info("Embedding primary LCE player into level.dat (Data.Player).");
         else
@@ -231,7 +231,7 @@ public sealed class LceWorldConversionService
         if (options.CopyPlayers)
         {
             logger.Info("Exporting player data...");
-            playersCopied = ExportPlayers(saveReader, outputDir);
+            playersCopied = ExportPlayers(saveReader, outputDir, options.TargetVersion);
             logger.Info($"  {playersCopied} player(s)");
         }
         else
@@ -347,7 +347,7 @@ public sealed class LceWorldConversionService
         }
     }
 
-    private static NbtCompound? TryReadPrimaryLcePlayer(LceSaveDataReader saveReader)
+    private static NbtCompound? TryReadPrimaryLcePlayer(LceSaveDataReader saveReader, string targetVersion)
     {
         var playerEntry = saveReader.EnumerateEntries()
             .Where(entry => entry.Name.StartsWith("players/", StringComparison.OrdinalIgnoreCase)
@@ -368,6 +368,7 @@ public sealed class LceWorldConversionService
             playerFile.LoadFromBuffer(playerBytes, 0, playerBytes.Length, NbtCompression.AutoDetect);
             NbtCompound playerTag = (NbtCompound)playerFile.RootTag.Clone();
             playerTag.Name = "Player";
+            ChunkConverter.SanitizeLegacyItemStacks(playerTag, targetVersion);
             return playerTag;
         }
         catch
@@ -699,9 +700,9 @@ public sealed class LceWorldConversionService
             data[byteIndex] = (byte)((data[byteIndex] & 0x0F) | ((value & 0x0F) << 4));
     }
 
-    private static int ExportPlayers(LceSaveDataReader saveReader, string outputDir)
+    private static int ExportPlayers(LceSaveDataReader saveReader, string outputDir, string targetVersion)
     {
-        string playersDir = Path.Combine(outputDir, "players");
+        string playersDir = Path.Combine(outputDir, "playerdata");
         Directory.CreateDirectory(playersDir);
 
         int count = 0;
@@ -714,7 +715,27 @@ public sealed class LceWorldConversionService
                 continue;
 
             string filename = Path.GetFileName(entry.Name.Replace('/', Path.DirectorySeparatorChar));
-            File.WriteAllBytes(Path.Combine(playersDir, filename), bytes);
+
+            try
+            {
+                var nbtFile = new NbtFile();
+                nbtFile.LoadFromBuffer(bytes, 0, bytes.Length, NbtCompression.AutoDetect);
+                var playerTag = nbtFile.RootTag as NbtCompound;
+                if (playerTag != null)
+                {
+                    ChunkConverter.SanitizeLegacyItemStacks(playerTag, targetVersion);
+                    nbtFile.SaveToFile(Path.Combine(playersDir, filename), NbtCompression.GZip);
+                }
+                else
+                {
+                    File.WriteAllBytes(Path.Combine(playersDir, filename), bytes);
+                }
+            }
+            catch
+            {
+                File.WriteAllBytes(Path.Combine(playersDir, filename), bytes);
+            }
+
             count++;
         }
 
