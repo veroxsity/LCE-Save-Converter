@@ -54,6 +54,11 @@ public static class ModernChunkWriter
         byte[] oldBlocks = legacyLevel.Get<NbtByteArray>("Blocks")?.Value ?? new byte[32768];
         byte[] oldData = legacyLevel.Get<NbtByteArray>("Data")?.Value ?? new byte[16384];
 
+        var blockEntities = legacyLevel.Get<NbtList>("TileEntities")?.Clone() as NbtList ?? new NbtList("block_entities", NbtTagType.Compound);
+        blockEntities.Name = "block_entities";
+        var entities = legacyLevel.Get<NbtList>("Entities")?.Clone() as NbtList ?? new NbtList("Entities", NbtTagType.Compound);
+        entities.Name = "entities";
+
         var sections = new NbtList("sections", NbtTagType.Compound);
         for (int sectionY = 0; sectionY < 8; sectionY++)
         {
@@ -173,6 +178,8 @@ public static class ModernChunkWriter
         root.Add(new NbtInt("yPos", 0));
         root.Add(new NbtString("Status", "full"));
         root.Add(sections);
+        root.Add(blockEntities);
+        root.Add(entities);
 
         return root;
     }
