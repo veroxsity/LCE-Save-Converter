@@ -325,6 +325,52 @@ public static class ModernChunkWriter
         root.Add(new NbtInt("zPos", chunkZ));
         root.Add(new NbtInt("yPos", 0));
         root.Add(new NbtString("Status", "full"));
+        var blockEntities = new NbtList("block_entities", NbtTagType.Compound);
+        if (legacyLevel.TryGet<NbtList>("TileEntities", out var oldTeList))
+        {
+            foreach (NbtCompound oldTe in oldTeList)
+            {
+                var newTe = (NbtCompound)oldTe.Clone();
+                if (newTe.TryGet<NbtString>("id", out var idTag))
+                {
+                    string id = idTag.Value;
+                    string newId = null;
+                    if (id == "Chest") newId = "minecraft:chest";
+                    else if (id == "Furnace") newId = "minecraft:furnace";
+                    else if (id == "BrewingStand") newId = "minecraft:brewing_stand";
+                    else if (id == "EnchantTable") newId = "minecraft:enchanting_table";
+                    else if (id == "Trap") newId = "minecraft:dispenser";
+                    else if (id == "MobSpawner") newId = "minecraft:mob_spawner";
+                    else if (id == "Control") newId = "minecraft:command_block";
+                    else if (id == "Beacon") newId = "minecraft:beacon";
+                    else if (id == "Skull") newId = "minecraft:skull";
+                    else if (id == "Sign") {
+                        newId = "minecraft:sign";
+                        // Basic modern sign structure
+                        var frontText = new NbtCompound("front_text");
+                        var messages = new NbtList("messages", NbtTagType.String);
+                        for (int i = 1; i <= 4; i++) {
+                            messages.Add(new NbtString($@"{{""text"":""{newTe.Get<NbtString>($"Text{i}")?.Value ?? ""}""}}"));
+                        }
+                        frontText.Add(messages);
+                        newTe.Add(frontText);
+                    }
+                    else if (id == "Cauldron") newId = "minecraft:cauldron";
+                    else if (id == "Dropper") newId = "minecraft:dropper";
+                    else if (id == "Hopper") newId = "minecraft:hopper";
+                    else if (id == "Comparator") newId = "minecraft:comparator";
+                    else if (id == "RecordPlayer") newId = "minecraft:jukebox";
+                    else if (id == "Banner") newId = "minecraft:banner";
+
+                    if (newId != null) 
+                    {
+                        newTe["id"] = new NbtString("id", newId);
+                        blockEntities.Add(newTe);
+                    }
+                }
+            }
+        }
+        root.Add(blockEntities);
         root.Add(sections);
 
         return root;
