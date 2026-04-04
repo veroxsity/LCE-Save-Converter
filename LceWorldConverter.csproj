@@ -17,6 +17,12 @@
   </ItemGroup>
 
   <ItemGroup>
+    <None Update="Resources\legacy_to_modern_block_mapping.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
+  <ItemGroup>
     <Compile Remove="LceWorldConverter.Gui\**\*.cs" />
     <Compile Remove="tests\**\*.cs" />
     <EmbeddedResource Remove="LceWorldConverter.Gui\**\*" />

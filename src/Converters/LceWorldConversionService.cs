@@ -554,12 +554,28 @@ public sealed class LceWorldConversionService
             if (level == null)
                 return legacyNbt;
 
-            NbtCompound anvilLevel = BuildAnvilLevel(options, level, chunkX, chunkZ);
-            var normalized = new NbtFile(new NbtCompound(string.Empty)
+            bool isModernJava = options.TargetVersion.StartsWith("1.20.3") ||
+                                options.TargetVersion.StartsWith("1.20.4") ||
+                                options.TargetVersion.StartsWith("1.20.5") ||
+                                options.TargetVersion.StartsWith("1.21");
+
+            NbtCompound rootOut;
+            if (isModernJava)
             {
-                new NbtInt("DataVersion", 1343),
-                anvilLevel,
-            });
+                rootOut = ModernChunkWriter.BuildModernAnvilLevel(options, level, chunkX, chunkZ);
+                rootOut.Add(new NbtInt("DataVersion", 3463));
+            }
+            else
+            {
+                NbtCompound anvilLevel = BuildAnvilLevel(options, level, chunkX, chunkZ);
+                rootOut = new NbtCompound(string.Empty)
+                {
+                    new NbtInt("DataVersion", 1343),
+                    anvilLevel
+                };
+            }
+
+            var normalized = new NbtFile(rootOut);
             using var ms = new MemoryStream();
             normalized.SaveToStream(ms, NbtCompression.None);
             return ms.ToArray();
@@ -572,7 +588,6 @@ public sealed class LceWorldConversionService
 
     private static NbtCompound BuildAnvilLevel(ConversionOptions options, NbtCompound legacyLevel, int chunkX, int chunkZ)
     {
-        bool isModernJava = options.TargetVersion.StartsWith("1.20.3") || options.TargetVersion.StartsWith("1.20.4") || options.TargetVersion.StartsWith("1.20.5") || options.TargetVersion.StartsWith("1.21");
         byte[] oldBlocks = legacyLevel.Get<NbtByteArray>("Blocks")?.Value ?? new byte[32768];
         byte[] oldData = legacyLevel.Get<NbtByteArray>("Data")?.Value ?? new byte[16384];
         byte[] oldSky = legacyLevel.Get<NbtByteArray>("SkyLight")?.Value ?? CreateFilledArray(16384, 0xFF);
