@@ -1,85 +1,21 @@
 using System;
-using System.Collections.Generic;
 using System.IO;
-using System.Text.Json;
 using fNbt;
 
 namespace LceWorldConverter;
 
 public static class ModernChunkWriter
 {
-    private static readonly Dictionary<string, string> _legacyToModernMap = new();
-    private static readonly Dictionary<string, string> _legacyToModernItemMap = new();
-    private static bool _isMapLoaded = false;
-    private static bool _isItemMapLoaded = false;
-
-    private static void EnsureItemMapLoaded()
-    {
-        if (_isItemMapLoaded) return;
-
-        string mapPath = Path.Combine(AppContext.BaseDirectory, "Resources", "legacy_to_modern_item_mapping.json");
-        if (File.Exists(mapPath))
-        {
-            string json = File.ReadAllText(mapPath);
-            var map = JsonSerializer.Deserialize<Dictionary<string, string>>(json);
-            if (map != null)
-            {
-                foreach (var kvp in map)
-                {
-                    _legacyToModernItemMap[kvp.Key] = kvp.Value;
-                }
-            }
-        }
-        _isItemMapLoaded = true;
-    }
+    private static readonly LegacyMappingProvider MappingProvider = new();
 
     public static string GetModernItemName(short id)
     {
-        EnsureItemMapLoaded();
-        if (_legacyToModernItemMap.TryGetValue(id.ToString(), out string? modernName))
-        {
-            return modernName;
-        }
-
-        return "minecraft:air";
-    }
-
-    private static void EnsureMapLoaded()
-    {
-        if (_isMapLoaded) return;
-
-        string mapPath = Path.Combine(AppContext.BaseDirectory, "Resources", "legacy_to_modern_block_mapping.json");
-        if (File.Exists(mapPath))
-        {
-            string json = File.ReadAllText(mapPath);
-            var map = JsonSerializer.Deserialize<Dictionary<string, string>>(json);
-            if (map != null)
-            {
-                foreach (var kvp in map)
-                {
-                    _legacyToModernMap[kvp.Key] = kvp.Value;
-                }
-            }
-        }
-        _isMapLoaded = true;
+        return MappingProvider.GetModernItemName(id);
     }
 
     public static string GetModernBlockName(byte id, byte meta)
     {
-        EnsureMapLoaded();
-        string key = $"{id}:{meta}";
-        if (_legacyToModernMap.TryGetValue(key, out string? modernName))
-        {
-            return modernName;
-        }
-        
-        // Fallback or generic rule mapping
-        if (_legacyToModernMap.TryGetValue($"{id}:0", out modernName))
-        {
-            return modernName;
-        }
-
-        return "minecraft:air";
+        return MappingProvider.GetModernBlockName(id, meta);
     }
 
     private static string GetContextualBlockState(byte blockId, byte meta, int x, int globalY, int z, byte[] oldBlocks, byte[] oldData)
@@ -452,12 +388,12 @@ public static class ModernChunkWriter
         root.Add(new NbtInt("yPos", 0));
         root.Add(new NbtString("Status", "full"));
         var blockEntities = new NbtList("block_entities", NbtTagType.Compound);
-        if (legacyLevel.TryGet<NbtList>("TileEntities", out var oldTeList))
+        if (legacyLevel.TryGet<NbtList>("TileEntities", out NbtList? oldTeList) && oldTeList != null)
         {
             foreach (NbtCompound oldTe in oldTeList)
             {
                 var newTe = (NbtCompound)oldTe.Clone();
-                if (newTe.TryGet<NbtString>("id", out var idTag))
+                if (newTe.TryGet<NbtString>("id", out NbtString? idTag) && idTag != null)
                 {
                     string id = idTag.Value;
                     string? newId = null;

@@ -10,42 +10,34 @@ namespace LceWorldConverter;
 /// </summary>
 public static class ChunkConverter
 {
-    // Stability-first default: converted worlds should load even when source entity schemas differ.
-    // Set by CLI flag (--preserve-entities) when the caller explicitly wants dynamic data retained.
-    public static bool PreserveDynamicChunkData { get; set; }
-
     public const int CHUNK_BLOCKS = 32768;
     public const int CHUNK_NIBBLES = 16384;
     public const int HEIGHTMAP_SIZE = 256;
     public const int BIOMES_SIZE = 256;
 
-    // Modern (1.13+) worlds can have sections above LCE's 0..127 range.
-    // Use one shift value for the whole conversion run to keep chunk heights consistent.
-    private static int? _globalModernSectionShift;
-    private static readonly HashSet<string> _unknownModernBlocks = new(StringComparer.Ordinal);
-
-    public static void ResetUnknownModernBlocks()
-    {
-        _globalModernSectionShift = null;
-        _unknownModernBlocks.Clear();
-    }
-
-    public static IReadOnlyList<string> GetUnknownModernBlocksSnapshot()
-    {
-        return _unknownModernBlocks.OrderBy(n => n, StringComparer.Ordinal).ToList();
-    }
-
     public static byte[] ConvertChunk(NbtCompound rootTag, int newChunkX, int newChunkZ)
     {
-        return LceChunkPayloadCodec.EncodeLegacyNbt(BuildLegacyChunkLevel(rootTag, newChunkX, newChunkZ));
+        return ConvertChunk(rootTag, newChunkX, newChunkZ, new ChunkConversionContext(preserveDynamicChunkData: false));
+    }
+
+    public static byte[] ConvertChunk(NbtCompound rootTag, int newChunkX, int newChunkZ, ChunkConversionContext context)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        return LceChunkPayloadCodec.EncodeLegacyNbt(BuildLegacyChunkLevel(rootTag, newChunkX, newChunkZ, context));
     }
 
     public static byte[] ConvertChunkForSave(NbtCompound rootTag, int newChunkX, int newChunkZ)
     {
-        return LceChunkPayloadCodec.EncodeCompressedStorage(BuildLegacyChunkLevel(rootTag, newChunkX, newChunkZ));
+        return ConvertChunkForSave(rootTag, newChunkX, newChunkZ, new ChunkConversionContext(preserveDynamicChunkData: false));
     }
 
-    private static NbtCompound BuildLegacyChunkLevel(NbtCompound rootTag, int newChunkX, int newChunkZ)
+    public static byte[] ConvertChunkForSave(NbtCompound rootTag, int newChunkX, int newChunkZ, ChunkConversionContext context)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        return LceChunkPayloadCodec.EncodeCompressedStorage(BuildLegacyChunkLevel(rootTag, newChunkX, newChunkZ, context));
+    }
+
+    private static NbtCompound BuildLegacyChunkLevel(NbtCompound rootTag, int newChunkX, int newChunkZ, ChunkConversionContext context)
     {
         JavaChunkFormatInfo formatInfo = JavaChunkFormatHelper.Inspect(rootTag);
         var sourceLevel = rootTag.Get<NbtCompound>("Level") ?? rootTag;
@@ -58,7 +50,7 @@ public static class ChunkConverter
         byte[] blockLight;
         if (isAnvil)
         {
-            FlattenAnvilSections(sourceLevel, formatInfo, out blocks, out data, out skyLight, out blockLight);
+            FlattenAnvilSections(sourceLevel, formatInfo, context, out blocks, out data, out skyLight, out blockLight);
         }
         else
         {
@@ -110,10 +102,10 @@ public static class ChunkConverter
 
         // Modern Java chunks (1.13+) often contain entity/tile-entity data that is not
         // compatible with TU19 deserializers. Writing empty lists is safer than crashing.
-        var entities = (PreserveDynamicChunkData && !usesModernContentSchema)
+        var entities = (context.PreserveDynamicChunkData && !usesModernContentSchema)
             ? (NbtList)CloneOrEmptyList(sourceLevel, "Entities")
             : new NbtList("Entities", NbtTagType.Compound);
-        if (PreserveDynamicChunkData)
+        if (context.PreserveDynamicChunkData)
         {
             SanitizeEntities(entities);
             SanitizeLegacyItemStacks(entities);
@@ -121,19 +113,19 @@ public static class ChunkConverter
         }
         level.Add(entities);
 
-        var tileEntities = PreserveDynamicChunkData
+        var tileEntities = context.PreserveDynamicChunkData
             ? BuildCompatibleTileEntities(sourceLevel, usesModernContentSchema)
             : BuildSafeSignTileEntities(sourceLevel, usesModernContentSchema);
         tileEntities.Name = "TileEntities";
         RemoveUnsupportedTileEntities(tileEntities);
         RemapTileEntityPositions(tileEntities, blockOffsetX, blockOffsetZ);
-        if (PreserveDynamicChunkData)
+        if (context.PreserveDynamicChunkData)
         {
             SanitizeLegacyItemStacks(tileEntities);
         }
         level.Add(tileEntities);
 
-        if (PreserveDynamicChunkData && !usesModernContentSchema && (sourceLevel.Contains("TileTicks") || sourceLevel.Contains("block_ticks")))
+        if (context.PreserveDynamicChunkData && !usesModernContentSchema && (sourceLevel.Contains("TileTicks") || sourceLevel.Contains("block_ticks")))
         {
             var tileTicks = CloneListOrEmpty(sourceLevel, "TileTicks", "block_ticks");
             tileTicks.Name = "TileTicks";
@@ -166,10 +158,7 @@ public static class ChunkConverter
     {
         if (!isModernChunkLayout)
         {
-            if (PreserveDynamicChunkData)
-                return CloneListOrEmpty(sourceLevel, "TileEntities", "block_entities");
-
-            return BuildSafeSignTileEntities(sourceLevel, isModernChunkLayout: false);
+            return CloneListOrEmpty(sourceLevel, "TileEntities", "block_entities");
         }
 
         return BuildSafeSignTileEntities(sourceLevel, isModernChunkLayout: true);
@@ -207,6 +196,7 @@ public static class ChunkConverter
     private static void FlattenAnvilSections(
         NbtCompound level,
         JavaChunkFormatInfo formatInfo,
+        ChunkConversionContext context,
         out byte[] blocks,
         out byte[] data,
         out byte[] skyLight,
@@ -230,7 +220,7 @@ public static class ChunkConverter
             if (!sectionY.HasValue)
                 continue;
 
-            if (!TryDecodeSectionBlocks(section, out byte[] sBlocks, out byte[] sData))
+            if (!TryDecodeSectionBlocks(section, context, out byte[] sBlocks, out byte[] sData))
                 continue;
 
             byte[]? sSky = section.Get<NbtByteArray>("SkyLight")?.Value ?? section.Get<NbtByteArray>("sky_light")?.Value;
@@ -253,17 +243,17 @@ public static class ChunkConverter
         if (formatInfo.RequiresSectionShift)
         {
             // Pick the extended-height shift once so adjacent chunks don't end up at different elevations.
-            if (_globalModernSectionShift == null)
+            if (context.GlobalModernSectionShift == null)
             {
                 int anchorSectionY = decodedSections
                     .OrderByDescending(s => s.NonAirCount)
                     .ThenBy(s => Math.Abs(s.SectionY - 4))
                     .First()
                     .SectionY;
-                _globalModernSectionShift = anchorSectionY - 4;
+                context.GlobalModernSectionShift = anchorSectionY - 4;
             }
 
-            sectionShift = _globalModernSectionShift.Value;
+            sectionShift = context.GlobalModernSectionShift.Value;
         }
 
         foreach (var section in decodedSections)
@@ -309,7 +299,7 @@ public static class ChunkConverter
         return count;
     }
 
-    private static bool TryDecodeSectionBlocks(NbtCompound section, out byte[] blocks, out byte[] data)
+    private static bool TryDecodeSectionBlocks(NbtCompound section, ChunkConversionContext? context, out byte[] blocks, out byte[] data)
     {
         byte[]? oldBlocks = section.Get<NbtByteArray>("Blocks")?.Value;
         if (oldBlocks != null && oldBlocks.Length >= 4096)
@@ -319,10 +309,15 @@ public static class ChunkConverter
             return true;
         }
 
-        return TryDecodePaletteSection(section, out blocks, out data);
+        return TryDecodePaletteSection(section, context, out blocks, out data);
     }
 
     private static bool TryDecodePaletteSection(NbtCompound section, out byte[] blocks, out byte[] data)
+    {
+        return TryDecodePaletteSection(section, context: null, out blocks, out data);
+    }
+
+    private static bool TryDecodePaletteSection(NbtCompound section, ChunkConversionContext? context, out byte[] blocks, out byte[] data)
     {
         blocks = new byte[4096];
         data = new byte[2048];
@@ -337,7 +332,7 @@ public static class ChunkConverter
             if (palette[0] is not NbtCompound singleEntry)
                 return false;
 
-            LegacyBlockState singleBlock = MapModernBlockState(singleEntry);
+            LegacyBlockState singleBlock = MapModernBlockStateWithContext(singleEntry, context);
             Array.Fill(blocks, singleBlock.Id);
             if (singleBlock.Data != 0)
             {
@@ -370,7 +365,7 @@ public static class ChunkConverter
             if (palette[paletteIndex] is not NbtCompound entry)
                 continue;
 
-            LegacyBlockState legacy = MapModernBlockState(entry);
+            LegacyBlockState legacy = MapModernBlockStateWithContext(entry, context);
             blocks[i] = legacy.Id;
             if (legacy.Data != 0)
                 SetNibble(data, i, legacy.Data);
@@ -466,6 +461,11 @@ public static class ChunkConverter
 
     private static LegacyBlockState MapModernBlockState(NbtCompound paletteEntry)
     {
+        return MapModernBlockStateWithContext(paletteEntry, context: null);
+    }
+
+    private static LegacyBlockState MapModernBlockStateWithContext(NbtCompound paletteEntry, ChunkConversionContext? context)
+    {
         string name = paletteEntry.Get<NbtString>("Name")?.Value ?? "minecraft:air";
         if (name.StartsWith("minecraft:", StringComparison.Ordinal))
             name = name[10..];
@@ -496,19 +496,8 @@ public static class ChunkConverter
         if (TryMapVariantBlock(name, properties, out var variant))
             return variant;
 
-        RecordUnknownModernBlock(name);
+        context?.RecordUnknownModernBlock(name);
         return new LegacyBlockState(0, 0);
-    }
-
-    private static void RecordUnknownModernBlock(string name)
-    {
-        if (string.IsNullOrWhiteSpace(name))
-            return;
-
-        if (name is "air" or "cave_air" or "void_air")
-            return;
-
-        _unknownModernBlocks.Add(name);
     }
 
     private static bool TryMapFluidBlock(string name, NbtCompound? properties, out LegacyBlockState block)

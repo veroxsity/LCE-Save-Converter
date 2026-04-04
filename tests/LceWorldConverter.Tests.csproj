@@ -18,6 +18,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\LceWorldConverter.csproj" />
+    <ProjectReference Include="..\LceWorldConverter.Cli\LceWorldConverter.Cli.csproj" />
   </ItemGroup>
 
 </Project>

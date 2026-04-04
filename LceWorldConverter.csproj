@@ -1,15 +1,15 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <OutputType>Exe</OutputType>
+    <OutputType>Library</OutputType>
     <TargetFramework>net8.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <RootNamespace>LceWorldConverter</RootNamespace>
-    <Version>2.2.1</Version>
-    <AssemblyVersion>2.2.1.0</AssemblyVersion>
-    <FileVersion>2.2.1.0</FileVersion>
-    <InformationalVersion>2.2.1</InformationalVersion>
+    <Version>2.3.0</Version>
+    <AssemblyVersion>2.3.0.0</AssemblyVersion>
+    <FileVersion>2.3.0.0</FileVersion>
+    <InformationalVersion>2.3.0</InformationalVersion>
   </PropertyGroup>
 
   <ItemGroup>
@@ -27,10 +27,14 @@
 
   <ItemGroup>
     <Compile Remove="LceWorldConverter.Gui\**\*.cs" />
+    <Compile Remove="LceWorldConverter.Cli\**\*.cs" />
+    <Compile Remove="src\App\**\*.cs" />
     <Compile Remove="tests\**\*.cs" />
     <EmbeddedResource Remove="LceWorldConverter.Gui\**\*" />
+    <EmbeddedResource Remove="LceWorldConverter.Cli\**\*" />
     <EmbeddedResource Remove="tests\**\*" />
     <None Remove="LceWorldConverter.Gui\**\*" />
+    <None Remove="LceWorldConverter.Cli\**\*" />
     <None Remove="tests\**\*" />
   </ItemGroup>
 

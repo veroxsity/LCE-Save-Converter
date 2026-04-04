@@ -241,7 +241,160 @@
             </ScrollViewer>
 
             <ScrollViewer x:Name="Step1View" VerticalScrollBarVisibility="Auto" Visibility="Collapsed">
-                <StackPanel x:Name="Step1Root"/>
+                <StackPanel>
+                    <StackPanel x:Name="JavaStepPanel">
+                        <Border Style="{StaticResource CardBorderStyle}">
+                            <StackPanel>
+                                <TextBlock Text="Source And Output" Style="{StaticResource SectionTitleStyle}"/>
+                                <TextBlock Text="Choose a Java world source and the folder where the converted saveData.ms should be written." Style="{StaticResource BodyTextStyle}" Margin="0,0,0,16"/>
+
+                                <StackPanel Margin="0,0,0,18">
+                                    <TextBlock Text="Java World" Style="{StaticResource LabelTextStyle}"/>
+                                    <TextBlock Text="Select a world folder or a .zip backup." Style="{StaticResource HintTextStyle}"/>
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+                                        <TextBox x:Name="JavaInputTextBox"
+                                                 Text="{Binding JavaInputPath, UpdateSourceTrigger=PropertyChanged}"
+                                                 Style="{StaticResource PathTextBoxStyle}"
+                                                 AllowDrop="True"
+                                                 PreviewDragOver="PathTextBox_PreviewDragOver"
+                                                 Drop="JavaInputTextBox_Drop"/>
+                                        <StackPanel Grid.Column="1" Orientation="Horizontal">
+                                            <Button Content="Folder" Style="{StaticResource SecondaryButtonStyle}" Click="BrowseJavaFolderButton_Click"/>
+                                            <Button Content="Zip" Style="{StaticResource SecondaryButtonStyle}" Margin="0" Click="BrowseJavaZipButton_Click"/>
+                                        </StackPanel>
+                                    </Grid>
+                                </StackPanel>
+
+                                <StackPanel>
+                                    <TextBlock Text="Output Folder" Style="{StaticResource LabelTextStyle}"/>
+                                    <TextBlock Text="Choose the folder that should receive the converted package." Style="{StaticResource HintTextStyle}"/>
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+                                        <TextBox x:Name="JavaOutputTextBox"
+                                                 Text="{Binding JavaOutputPath, UpdateSourceTrigger=PropertyChanged}"
+                                                 Style="{StaticResource PathTextBoxStyle}"
+                                                 AllowDrop="True"
+                                                 PreviewDragOver="DirectoryTextBox_PreviewDragOver"
+                                                 Drop="JavaOutputTextBox_Drop"/>
+                                        <Button Grid.Column="1" Content="Choose Folder" Style="{StaticResource SecondaryButtonStyle}" Margin="0" Click="BrowseJavaOutputButton_Click"/>
+                                    </Grid>
+                                </StackPanel>
+                            </StackPanel>
+                        </Border>
+
+                        <Border Style="{StaticResource CardBorderStyle}">
+                            <StackPanel>
+                                <TextBlock Text="Options" Style="{StaticResource SectionTitleStyle}"/>
+                                <TextBlock Text="Match the target legacy world type, then decide which extra data should be carried over." Style="{StaticResource BodyTextStyle}" Margin="0,0,0,16"/>
+
+                                <Grid Margin="0,0,0,18">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="320"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel Margin="0,0,16,0">
+                                        <TextBlock Text="World Type" Style="{StaticResource LabelTextStyle}"/>
+                                        <TextBlock Text="Controls the target world bounds and whether the result is flat." Style="{StaticResource HintTextStyle}" Margin="0"/>
+                                    </StackPanel>
+                                    <ComboBox x:Name="JavaWorldTypeComboBox"
+                                              Grid.Column="1"
+                                              Width="240"
+                                              HorizontalAlignment="Left"
+                                              ItemsSource="{Binding WorldTypeKeys}"
+                                              SelectedItem="{Binding JavaWorldType, UpdateSourceTrigger=PropertyChanged}"/>
+                                </Grid>
+
+                                <WrapPanel>
+                                    <CheckBox x:Name="JavaAllDimensionsCheckBox" Content="Convert Nether and End" Margin="0,0,18,10" IsChecked="{Binding JavaAllDimensions}"/>
+                                    <CheckBox x:Name="JavaCopyPlayersCheckBox" Content="Copy numeric player data" Margin="0,0,18,10" IsChecked="{Binding JavaCopyPlayers}"/>
+                                    <CheckBox x:Name="JavaPreserveEntitiesCheckBox" Content="Preserve entities and tile data" Margin="0,0,18,10" IsChecked="{Binding JavaPreserveEntities}"/>
+                                </WrapPanel>
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+
+                    <StackPanel x:Name="LceStepPanel" Visibility="Collapsed">
+                        <Border Style="{StaticResource CardBorderStyle}">
+                            <StackPanel>
+                                <TextBlock Text="Source And Output" Style="{StaticResource SectionTitleStyle}"/>
+                                <TextBlock Text="Choose the source saveData.ms package and the folder where the Java world should be exported." Style="{StaticResource BodyTextStyle}" Margin="0,0,0,16"/>
+
+                                <StackPanel Margin="0,0,0,18">
+                                    <TextBlock Text="saveData.ms" Style="{StaticResource LabelTextStyle}"/>
+                                    <TextBlock Text="Drop or browse for the legacy save package." Style="{StaticResource HintTextStyle}"/>
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+                                        <TextBox x:Name="LceInputTextBox"
+                                                 Text="{Binding LceInputPath, UpdateSourceTrigger=PropertyChanged}"
+                                                 Style="{StaticResource PathTextBoxStyle}"
+                                                 AllowDrop="True"
+                                                 PreviewDragOver="PathTextBox_PreviewDragOver"
+                                                 Drop="LceInputTextBox_Drop"/>
+                                        <Button Grid.Column="1" Content="Browse Save" Style="{StaticResource SecondaryButtonStyle}" Margin="0" Click="BrowseLceInputButton_Click"/>
+                                    </Grid>
+                                </StackPanel>
+
+                                <StackPanel>
+                                    <TextBlock Text="Output Folder" Style="{StaticResource LabelTextStyle}"/>
+                                    <TextBlock Text="Choose the folder that should receive the Java world." Style="{StaticResource HintTextStyle}"/>
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+                                        <TextBox x:Name="LceOutputTextBox"
+                                                 Text="{Binding LceOutputPath, UpdateSourceTrigger=PropertyChanged}"
+                                                 Style="{StaticResource PathTextBoxStyle}"
+                                                 AllowDrop="True"
+                                                 PreviewDragOver="DirectoryTextBox_PreviewDragOver"
+                                                 Drop="LceOutputTextBox_Drop"/>
+                                        <Button Grid.Column="1" Content="Choose Folder" Style="{StaticResource SecondaryButtonStyle}" Margin="0" Click="BrowseLceOutputButton_Click"/>
+                                    </Grid>
+                                </StackPanel>
+                            </StackPanel>
+                        </Border>
+
+                        <Border Style="{StaticResource CardBorderStyle}">
+                            <StackPanel>
+                                <TextBlock Text="Options" Style="{StaticResource SectionTitleStyle}"/>
+                                <TextBlock Text="Choose your target Java Edition version and select whether to export additional dimensions and player data." Style="{StaticResource BodyTextStyle}" Margin="0,0,0,16"/>
+
+                                <Grid Margin="0,0,0,18">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="320"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel Margin="0,0,16,0">
+                                        <TextBlock Text="Target Version" Style="{StaticResource LabelTextStyle}"/>
+                                        <TextBlock Text="The minimum Java Edition version that will run this world." Style="{StaticResource HintTextStyle}" Margin="0"/>
+                                    </StackPanel>
+                                    <ComboBox x:Name="LceTargetVersionComboBox"
+                                              Grid.Column="1"
+                                              Width="240"
+                                              HorizontalAlignment="Left"
+                                              IsEditable="True"
+                                              ItemsSource="{Binding TargetVersions}"
+                                              Text="{Binding LceTargetVersion, UpdateSourceTrigger=PropertyChanged}"/>
+                                </Grid>
+
+                                <WrapPanel>
+                                    <CheckBox x:Name="LceAllDimensionsCheckBox" Content="Export Nether and End" Margin="0,0,18,10" IsChecked="{Binding LceAllDimensions}"/>
+                                    <CheckBox x:Name="LceCopyPlayersCheckBox" Content="Export players/*.dat" Margin="0,0,18,10" IsChecked="{Binding LceCopyPlayers}"/>
+                                </WrapPanel>
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+                </StackPanel>
             </ScrollViewer>
 
             <Grid x:Name="Step2View" Visibility="Collapsed">
@@ -254,7 +407,7 @@
                     <StackPanel>
                         <TextBlock Text="Review" Style="{StaticResource SectionTitleStyle}"/>
                         <TextBlock Text="Double-check the summary below before you start the conversion." Style="{StaticResource BodyTextStyle}" Margin="0,0,0,16"/>
-                        <TextBlock x:Name="ReviewSummaryText" Style="{StaticResource BodyTextStyle}"/>
+                        <TextBlock x:Name="ReviewSummaryText" Text="{Binding ReviewSummary}" Style="{StaticResource BodyTextStyle}"/>
                     </StackPanel>
                 </Border>
                 <Border Grid.Row="1" Style="{StaticResource CardBorderStyle}">
@@ -262,7 +415,7 @@
                         <TextBlock Text="Run Conversion" Style="{StaticResource SectionTitleStyle}"/>
                         <TextBlock Text="Start the conversion when you are happy with the current setup." Style="{StaticResource BodyTextStyle}" Margin="0,0,0,16"/>
                         <WrapPanel>
-                            <Button x:Name="ConvertButton" Content="Convert" Style="{StaticResource PrimaryButtonStyle}" Click="ConvertButton_Click"/>
+                            <Button x:Name="ConvertButton" Content="{Binding ConvertButtonText}" Style="{StaticResource PrimaryButtonStyle}" Click="ConvertButton_Click"/>
                             <TextBlock x:Name="StatusText" Text="Ready" Foreground="{StaticResource AccentBrush}" FontSize="15" FontWeight="SemiBold" VerticalAlignment="Center" Margin="6,8,0,0"/>
                         </WrapPanel>
                     </StackPanel>

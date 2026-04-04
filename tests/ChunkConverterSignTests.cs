@@ -9,7 +9,7 @@ public sealed class ChunkConverterSignTests
     [Fact]
     public void ConvertChunk_LegacySignTileEntity_IsSanitizedAndReducedToSafeFields()
     {
-        ChunkConverter.PreserveDynamicChunkData = false;
+        var context = new ChunkConversionContext(preserveDynamicChunkData: false);
 
         var tileEntities = new NbtList("TileEntities", NbtTagType.Compound);
         tileEntities.Add(UnnamedCompound(
@@ -33,7 +33,7 @@ public sealed class ChunkConverterSignTests
             }
         };
 
-        byte[] chunkBytes = ChunkConverter.ConvertChunk(root, 3, 4);
+        byte[] chunkBytes = ChunkConverter.ConvertChunk(root, 3, 4, context);
         NbtCompound level = LoadLevel(chunkBytes);
         var converted = level.Get<NbtList>("TileEntities");
 
@@ -55,7 +55,7 @@ public sealed class ChunkConverterSignTests
     [Fact]
     public void ConvertChunk_ModernSignTileEntity_ExtractsFrontTextAsSafeLegacySign()
     {
-        ChunkConverter.PreserveDynamicChunkData = false;
+        var context = new ChunkConversionContext(preserveDynamicChunkData: false);
 
         var messages = new NbtList("messages", NbtTagType.String)
         {
@@ -91,7 +91,7 @@ public sealed class ChunkConverterSignTests
             }
         };
 
-        byte[] chunkBytes = ChunkConverter.ConvertChunk(root, 0, 0);
+        byte[] chunkBytes = ChunkConverter.ConvertChunk(root, 0, 0, context);
         NbtCompound level = LoadLevel(chunkBytes);
         var converted = level.Get<NbtList>("TileEntities");
 
@@ -112,7 +112,7 @@ public sealed class ChunkConverterSignTests
     [Fact]
     public void ConvertChunk_SafeSignTileEntity_IsRecenteredWithChunkShift()
     {
-        ChunkConverter.PreserveDynamicChunkData = false;
+        var context = new ChunkConversionContext(preserveDynamicChunkData: false);
 
         var tileEntities = new NbtList("TileEntities", NbtTagType.Compound);
         tileEntities.Add(UnnamedCompound(
@@ -132,7 +132,7 @@ public sealed class ChunkConverterSignTests
             }
         };
 
-        byte[] chunkBytes = ChunkConverter.ConvertChunk(root, 3, 4);
+        byte[] chunkBytes = ChunkConverter.ConvertChunk(root, 3, 4, context);
         NbtCompound level = LoadLevel(chunkBytes);
         var converted = level.Get<NbtList>("TileEntities");
 

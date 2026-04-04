@@ -6,23 +6,37 @@ public sealed class LceWorldConversionService
 {
     private const short OutputOriginalSaveVersion = 7;
     private const short OutputCurrentSaveVersion = 9;
+    private static readonly JavaWorldPreparationService JavaWorldPreparation = new();
+    private static readonly JavaOutputCleanupService JavaOutputCleanup = new();
+    private static readonly SpawnEstimationService SpawnEstimation = new();
+    private static readonly PlayerDataTransferService PlayerDataTransfer = new();
+    private static readonly UnknownBlockReportService UnknownBlockReport = new();
+    private readonly JavaToLceConversionOrchestrator _javaToLceOrchestrator = new();
+    private readonly LceToJavaConversionOrchestrator _lceToJavaOrchestrator = new();
 
-    public ConversionResult Convert(ConversionOptions options, IConversionLogger? logger = null)
+    public ConversionResult Convert(ConversionRequest request, IConversionLogger? logger = null)
     {
-        ArgumentNullException.ThrowIfNull(options);
+        ArgumentNullException.ThrowIfNull(request);
         logger ??= NullConversionLogger.Instance;
 
+        ConversionOptions options = ConversionOptions.FromRequest(request);
         return options.Direction switch
         {
-            ConversionDirection.JavaToLce => ConvertJavaToLce(options, logger),
-            ConversionDirection.LceToJava => ConvertLceToJava(options, logger),
+            ConversionDirection.JavaToLce => _javaToLceOrchestrator.Convert(options, logger),
+            ConversionDirection.LceToJava => _lceToJavaOrchestrator.Convert(options, logger),
             _ => throw new InvalidOperationException($"Unsupported conversion direction: {options.Direction}"),
         };
     }
 
-    private ConversionResult ConvertJavaToLce(ConversionOptions options, IConversionLogger logger)
+    public ConversionResult Convert(ConversionOptions options, IConversionLogger? logger = null)
     {
-        using var preparedWorld = PreparedJavaWorld.Open(options.InputPath);
+        ArgumentNullException.ThrowIfNull(options);
+        return Convert(options.ToRequest(), logger);
+    }
+
+    internal static ConversionResult ConvertJavaToLceCore(ConversionOptions options, IConversionLogger logger)
+    {
+        using var preparedWorld = JavaWorldPreparation.Open(options.InputPath);
 
         string javaWorldPath = preparedWorld.WorldPath;
         string outputDir = options.OutputDirectory;
@@ -46,8 +60,7 @@ public sealed class LceWorldConversionService
         logger.Info($"World type:  {(options.FlatWorld ? "Flat" : "Default")}");
         logger.Info(string.Empty);
 
-        ChunkConverter.ResetUnknownModernBlocks();
-        ChunkConverter.PreserveDynamicChunkData = options.PreserveEntities;
+        var chunkContext = new ChunkConversionContext(options.PreserveEntities);
 
         using var reader = new JavaWorldReader(javaWorldPath);
 
@@ -65,7 +78,7 @@ public sealed class LceWorldConversionService
         logger.Info($"Java spawn:  ({spawnX}, {spawnZ}) -> chunk ({spawnChunkX}, {spawnChunkZ})");
         logger.Info($"Recentring:  Java chunk ({spawnChunkX},{spawnChunkZ}) -> LCE chunk (0,0)");
 
-        int? estimatedSpawnY = EstimateSafeSpawnY(reader, spawnX, spawnY, spawnZ, spawnChunkX, spawnChunkZ);
+        int? estimatedSpawnY = SpawnEstimation.EstimateSafeSpawnY(reader, spawnX, spawnY, spawnZ, spawnChunkX, spawnChunkZ);
         if (estimatedSpawnY.HasValue)
             logger.Info($"Spawn Y:     {spawnY} -> {estimatedSpawnY.Value} (terrain-adjusted)");
         else
@@ -85,7 +98,7 @@ public sealed class LceWorldConversionService
             container.CreateFile(name);
 
         logger.Info($"Converting overworld ({options.XzSize}x{options.XzSize} chunks)...");
-        int owConverted = ConvertDimension(reader, container, "overworld", string.Empty, halfSize, spawnChunkX, spawnChunkZ, logger);
+        int owConverted = ConvertDimension(reader, container, "overworld", string.Empty, halfSize, spawnChunkX, spawnChunkZ, logger, chunkContext);
         logger.Info($"  {owConverted} chunks converted");
 
         int netherConverted = 0;
@@ -95,11 +108,11 @@ public sealed class LceWorldConversionService
             logger.Info($"Converting nether ({options.XzSize / hellScale}x{options.XzSize / hellScale} chunks)...");
             int netherOffsetChunkX = FloorDiv(spawnChunkX, 8);
             int netherOffsetChunkZ = FloorDiv(spawnChunkZ, 8);
-            netherConverted = ConvertDimension(reader, container, "nether", "DIM-1", hellHalfSize, netherOffsetChunkX, netherOffsetChunkZ, logger);
+            netherConverted = ConvertDimension(reader, container, "nether", "DIM-1", hellHalfSize, netherOffsetChunkX, netherOffsetChunkZ, logger, chunkContext);
             logger.Info($"  {netherConverted} chunks converted");
 
             logger.Info($"Converting end ({endHalfSize * 2}x{endHalfSize * 2} chunks)...");
-            endConverted = ConvertDimension(reader, container, "end", "DIM1", endHalfSize, 0, 0, logger);
+            endConverted = ConvertDimension(reader, container, "end", "DIM1", endHalfSize, 0, 0, logger, chunkContext);
             logger.Info($"  {endConverted} chunks converted");
         }
         else
@@ -118,7 +131,7 @@ public sealed class LceWorldConversionService
         if (options.CopyPlayers)
         {
             logger.Info("Copying player data...");
-            playersCopied = CopyPlayers(javaWorldPath, container, blockOffsetX, blockOffsetZ);
+            playersCopied = PlayerDataTransfer.CopyPlayers(javaWorldPath, container, blockOffsetX, blockOffsetZ);
             logger.Info($"  {playersCopied} player(s)");
         }
         else
@@ -129,21 +142,8 @@ public sealed class LceWorldConversionService
         logger.Info("Writing saveData.ms...");
         container.Save(outputPath);
 
-        IReadOnlyList<string> unknownBlocks = ChunkConverter.GetUnknownModernBlocksSnapshot();
-        string? unknownPath = null;
-        if (unknownBlocks.Count > 0)
-        {
-            unknownPath = Path.Combine(outputDir, "unknown-modern-blocks.txt");
-            File.WriteAllLines(unknownPath, unknownBlocks);
-
-            logger.Info(string.Empty);
-            logger.Info($"Unknown modern blocks mapped to air: {unknownBlocks.Count}");
-            foreach (string blockName in unknownBlocks.Take(40))
-                logger.Info($"  - {blockName}");
-            if (unknownBlocks.Count > 40)
-                logger.Info($"  ... and {unknownBlocks.Count - 40} more");
-            logger.Info($"Full list written to: {unknownPath}");
-        }
+        IReadOnlyList<string> unknownBlocks = chunkContext.GetUnknownModernBlocksSnapshot();
+        string? unknownPath = UnknownBlockReport.Write(outputDir, unknownBlocks, logger);
 
         logger.Info(string.Empty);
         logger.Info("Conversion complete!");
@@ -166,7 +166,7 @@ public sealed class LceWorldConversionService
         };
     }
 
-    private ConversionResult ConvertLceToJava(ConversionOptions options, IConversionLogger logger)
+    internal static ConversionResult ConvertLceToJavaCore(ConversionOptions options, IConversionLogger logger)
     {
         string saveDataPath = options.InputPath;
         if (!File.Exists(saveDataPath))
@@ -174,8 +174,7 @@ public sealed class LceWorldConversionService
 
         string outputDir = options.OutputDirectory;
         Directory.CreateDirectory(outputDir);
-        DeleteStaleJavaRuntimeState(outputDir);
-        DeleteLegacyOutputRegions(outputDir);
+        JavaOutputCleanup.Clean(outputDir);
 
         logger.Info($"Source:      {saveDataPath}");
         logger.Info($"Output:      {outputDir}");
@@ -231,7 +230,7 @@ public sealed class LceWorldConversionService
         if (options.CopyPlayers)
         {
             logger.Info("Exporting player data...");
-            playersCopied = ExportPlayers(saveReader, outputDir, options.TargetVersion);
+            playersCopied = PlayerDataTransfer.ExportPlayers(saveReader, outputDir, options.TargetVersion);
             logger.Info($"  {playersCopied} player(s)");
         }
         else
@@ -958,7 +957,8 @@ public sealed class LceWorldConversionService
         int halfSize,
         int offsetChunkX,
         int offsetChunkZ,
-        IConversionLogger logger)
+        IConversionLogger logger,
+        ChunkConversionContext chunkContext)
     {
         var regionFiles = reader.GetRegionFiles(dimensionPrefix);
         var regionLookup = new Dictionary<(int, int), string>();
@@ -1013,7 +1013,7 @@ public sealed class LceWorldConversionService
                     // The runtime upgrades this format itself and it is proving more
                     // compatible for mixed-version/upgraded worlds than our custom
                     // compressed-chunk writer.
-                    lceChunkData = ChunkConverter.ConvertChunk(chunkNbt, lcx, lcz);
+                    lceChunkData = ChunkConverter.ConvertChunk(chunkNbt, lcx, lcz, chunkContext);
                     lceChunkData = CanonicalizeChunkNbt(lceChunkData, lcx, lcz);
                     if (lceChunkData.Length == 0)
                         continue;

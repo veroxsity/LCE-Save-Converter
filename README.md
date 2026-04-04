@@ -124,7 +124,7 @@ Requires [.NET 8 SDK](https://dotnet.microsoft.com/download).
 ```bash
 git clone https://github.com/veroxsity/LCE-Save-Converter.git
 cd LCE-Save-Converter
-dotnet build
+dotnet build ./LceWorldConverter.sln
 ```
 
 Build GUI project:
@@ -142,5 +142,5 @@ dotnet run --project .\LceWorldConverter.Gui\LceWorldConverter.Gui.csproj
 Run CLI from source:
 
 ```powershell
-dotnet run --project .\LceWorldConverter.csproj -- --from java <java_world_folder_or_zip> <output_dir>
+dotnet run --project .\LceWorldConverter.Cli\LceWorldConverter.Cli.csproj -- --from java <java_world_folder_or_zip> <output_dir>
 ```

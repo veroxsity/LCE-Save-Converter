@@ -1,4 +1,5 @@
 using LceWorldConverter;
+using LceWorldConverter.Cli;
 using Xunit;
 
 namespace LceWorldConverter.Tests;
@@ -14,13 +15,13 @@ public sealed class CommandLineOptionsParserTests
             @"C:\Converted\Milky"
         ];
 
-        bool ok = CommandLineOptionsParser.TryParse(args, out ConversionOptions? options, out string? error);
+        bool ok = CommandLineOptionsParser.TryParse(args, out ConversionRequest? request, out string? error);
 
         Assert.True(ok, error);
-        Assert.NotNull(options);
-        Assert.Equal(ConversionDirection.LceToJava, options!.Direction);
-        Assert.Equal(args[0], options.InputPath);
-        Assert.Equal(args[1], options.OutputDirectory);
+        Assert.NotNull(request);
+        Assert.Equal(ConversionDirection.LceToJava, request!.Direction);
+        Assert.Equal(args[0], request.InputPath);
+        Assert.Equal(args[1], request.OutputDirectory);
     }
 
     [Fact]
@@ -32,12 +33,12 @@ public sealed class CommandLineOptionsParserTests
             @"C:\Converted\Slot"
         ];
 
-        bool ok = CommandLineOptionsParser.TryParse(args, out ConversionOptions? options, out string? error);
+        bool ok = CommandLineOptionsParser.TryParse(args, out ConversionRequest? request, out string? error);
 
         Assert.True(ok, error);
-        Assert.NotNull(options);
-        Assert.Equal(ConversionDirection.JavaToLce, options!.Direction);
-        Assert.Equal(args[0], options.InputPath);
-        Assert.Equal(args[1], options.OutputDirectory);
+        Assert.NotNull(request);
+        Assert.Equal(ConversionDirection.JavaToLce, request!.Direction);
+        Assert.Equal(args[0], request.InputPath);
+        Assert.Equal(args[1], request.OutputDirectory);
     }
 }

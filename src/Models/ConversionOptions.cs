@@ -18,4 +18,38 @@ public sealed class ConversionOptions
     public bool ConvertAllDimensions { get; init; }
     public bool CopyPlayers { get; init; }
     public bool PreserveEntities { get; init; }
+
+    public static ConversionOptions FromRequest(ConversionRequest request)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        return new ConversionOptions
+        {
+            Direction = request.Direction,
+            InputPath = request.InputPath,
+            OutputDirectory = request.OutputDirectory,
+            XzSize = request.XzSize,
+            SizeLabel = request.SizeLabel,
+            TargetVersion = ConversionDefaults.NormalizeTargetVersion(request.TargetVersion),
+            FlatWorld = request.FlatWorld,
+            ConvertAllDimensions = request.ConvertAllDimensions,
+            CopyPlayers = request.CopyPlayers,
+            PreserveEntities = request.PreserveEntities,
+        };
+    }
+
+    public ConversionRequest ToRequest()
+    {
+        return new ConversionRequest
+        {
+            Direction = Direction,
+            InputPath = InputPath,
+            OutputDirectory = OutputDirectory,
+            WorldProfile = WorldProfiles.FromLegacySettings(XzSize, FlatWorld),
+            TargetVersion = ConversionDefaults.NormalizeTargetVersion(TargetVersion),
+            ConvertAllDimensions = ConvertAllDimensions,
+            CopyPlayers = CopyPlayers,
+            PreserveEntities = PreserveEntities,
+        };
+    }
 }
