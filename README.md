@@ -8,7 +8,8 @@
 
 <p align="center">
   <img src="https://img.shields.io/badge/.NET-8-512BD4?style=flat-square&logo=dotnet" alt=".NET 8" />
-  <img src="https://img.shields.io/badge/Platform-Windows-0078D6?style=flat-square&logo=windows" alt="Windows" />
+  <img src="https://img.shields.io/badge/CLI-Windows%20%7C%20Linux%20%7C%20macOS-2F855A?style=flat-square" alt="CLI cross-platform" />
+  <img src="https://img.shields.io/badge/GUI-Windows-0078D6?style=flat-square&logo=windows" alt="GUI Windows" />
   <img src="https://img.shields.io/github/v/release/veroxsity/LCE-Save-Converter?style=flat-square&label=Release" alt="Release" />
   <img src="https://img.shields.io/github/downloads/veroxsity/LCE-Save-Converter/total?style=flat-square&label=Downloads" alt="Downloads" />
 </p>
@@ -35,7 +36,7 @@ Convert Java Edition worlds into Minecraft Legacy Console Edition (LCE) `saveDat
 4. Choose an output folder and any extra options.
 5. Review the summary and click `Convert`.
 
-The GUI now uses the same shared validation and defaults as the CLI, so both entry points follow the same conversion rules.
+The GUI uses the same shared request model and validation as the CLI. The main behavior difference is the default LCE -> Java target version: the GUI starts at `1.21.11`, while the CLI defaults to `1.12.2` unless `--target-version` is supplied.
 
 ### CLI (Prebuilt EXE)
 
@@ -99,6 +100,19 @@ Supported LCE->Java target versions currently include `1.12.2`, `1.13.2`, `1.14.
 .\LceWorldConverter.exe --inspect <path_to_saveData.ms>
 ```
 
+Additional inspection and debugging commands are also available from the CLI:
+
+```powershell
+.\LceWorldConverter.exe --scan-java-world <java_world_path>
+.\LceWorldConverter.exe --inspect-region <region_file_path>
+.\LceWorldConverter.exe --inspect-java-chunk <java_world_path> <chunk_x> <chunk_z> [overworld|nether|end]
+.\LceWorldConverter.exe --scan-java-chest-items <java_world_path> [overworld|nether|end] [max_printed]
+.\LceWorldConverter.exe --inspect-lce-chunk <saveData.ms_path> <chunk_x> <chunk_z> [overworld|nether|end]
+.\LceWorldConverter.exe --scan-lce-coordinates <saveData.ms_path> [overworld|nether|end]
+.\LceWorldConverter.exe --scan-lce-trailing-nbt <saveData.ms_path> [overworld|nether|end]
+.\LceWorldConverter.exe --scan-lce-chest-item-mappings <saveData.ms_path> [overworld|nether|end]
+```
+
 ## Notes and Limitations
 
 - LCE height is 128; source blocks above Y=127 are dropped/remapped.
@@ -113,7 +127,7 @@ Full format notes, source references, and conversion internals are in [CONVERTER
 
 - `LceWorldConverter.csproj`: shared core conversion library
 - `LceWorldConverter.Cli/`: command-line app that publishes as `LceWorldConverter.exe` in release packages
-- `LceWorldConverter.Gui/`: WPF desktop GUI
+- `LceWorldConverter.Gui/`: Windows-only WPF desktop GUI
 - `src/Requests/`: shared request model, defaults, and validation
 - `src/Services/`: focused conversion-side services
 - `tests/`: unit and integration-oriented regression coverage
