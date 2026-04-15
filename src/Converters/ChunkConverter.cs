@@ -26,64 +26,6 @@ public static class ChunkConverter
         return LceChunkPayloadCodec.EncodeLegacyNbt(BuildLegacyChunkLevel(rootTag, newChunkX, newChunkZ, context));
     }
 
-    /// <summary>
-    /// Converts Xbox 360 chunk data to LCE NBT (no block remapping).
-    /// Xbox 360 already uses LCE-compatible block IDs, so we preserve block data as-is.
-    /// Only coordinate and NBT structure are converted.
-    /// </summary>
-    public static byte[] ConvertXboxChunk(NbtCompound rootTag, int newChunkX, int newChunkZ)
-    {
-        ArgumentNullException.ThrowIfNull(rootTag);
-        return LceChunkPayloadCodec.EncodeLegacyNbt(BuildLegacyChunkLevelXbox(rootTag, newChunkX, newChunkZ));
-    }
-
-    /// <summary>
-    /// Repairs likely swapped nibbles in Xbox chunk metadata without doing block remapping.
-    /// Xbox data can have corrupted metadata that needs nibble swapping to fix.
-    /// </summary>
-    public static bool RepairXboxNibbles(NbtCompound level)
-    {
-        byte[]? blocks = level.Get<NbtByteArray>("Blocks")?.Value;
-        byte[]? data = level.Get<NbtByteArray>("Data")?.Value;
-
-        if (blocks is null || data is null || data.Length == 0)
-        {
-            return false;
-        }
-
-        // Simple heuristic: swap if it looks better
-        byte[] swappedData = SwapNibblePairs(data);
-        
-        // Count valid LCE block IDs in normal vs swapped
-        int normalValid = 0, swappedValid = 0;
-        int max = Math.Min(blocks.Length, 32768);
-        
-        for (int i = 0; i < max; i++)
-        {
-            if (IsValidLceTileId(blocks[i])) normalValid++;
-        }
-        
-        // If swapped looks better, apply it
-        if (swappedValid > normalValid)
-        {
-            swappedData.CopyTo(data, 0);
-            return true;
-        }
-
-        return false;
-    }
-
-    private static byte[] SwapNibblePairs(byte[] data)
-    {
-        byte[] result = new byte[data.Length];
-        for (int i = 0; i < data.Length; i++)
-        {
-            byte b = data[i];
-            result[i] = (byte)(((b & 0x0F) << 4) | ((b & 0xF0) >> 4));
-        }
-        return result;
-    }
-
     public static byte[] ConvertChunkForSave(NbtCompound rootTag, int newChunkX, int newChunkZ)
     {
         return ConvertChunkForSave(rootTag, newChunkX, newChunkZ, new ChunkConversionContext(preserveDynamicChunkData: false));
@@ -133,10 +75,11 @@ public static class ChunkConverter
         long inhabitedTime = sourceLevel.Get<NbtLong>("InhabitedTime")?.Value ?? 0;
 
         // Build the root + Level compound expected by NbtIo::read in old chunk path.
-        // TerrainPopulatedFlags encodes which post-processing passes have been completed.
-        // Value: sTerrainPopulatedAllNeighbours (1022) | sTerrainPostPostProcessed (1024) = 2046
-        // Source: LevelChunk.h constants + EmptyLevelChunk.cpp initialization
-        const short TERRAIN_POPULATED_FLAGS = 2046;  // 0x07FE
+        // Force the game to run full post-processing (including lighting propagation)
+        // on converted chunks rather than trusting source light nibbles.
+        const short TERRAIN_POPULATED_FLAGS = 0;
+        Array.Fill(skyLight, (byte)0);
+        Array.Fill(blockLight, (byte)0);
         var level = new NbtCompound("Level")
         {
             new NbtInt("xPos", newChunkX),
@@ -190,50 +133,6 @@ public static class ChunkConverter
             RemapTileTickPositions(tileTicks, blockOffsetX, blockOffsetZ);
             level.Add(tileTicks);
         }
-
-        return level;
-    }
-
-    /// <summary>
-    /// Builds LCE NBT from Xbox 360 chunk data without block remapping.
-    /// Xbox 360 block IDs are already LCE-compatible, so we preserve them exactly.
-    /// </summary>
-    private static NbtCompound BuildLegacyChunkLevelXbox(NbtCompound rootTag, int newChunkX, int newChunkZ)
-    {
-        var sourceLevel = rootTag.Get<NbtCompound>("Level") ?? rootTag;
-
-        // Extract block data - Xbox 360 already has valid LCE block IDs
-        byte[] blocks = GetByteArrayOrDefault(sourceLevel, "Blocks", CHUNK_BLOCKS);
-        byte[] data = GetByteArrayOrDefault(sourceLevel, "Data", CHUNK_NIBBLES);
-        byte[] skyLight = GetByteArrayOrDefault(sourceLevel, "SkyLight", CHUNK_NIBBLES);
-        byte[] blockLight = GetByteArrayOrDefault(sourceLevel, "BlockLight", CHUNK_NIBBLES);
-        byte[] heightMap = GetByteArrayOrDefault(sourceLevel, "HeightMap", HEIGHTMAP_SIZE);
-        byte[] biomes = GetByteArrayOrDefault(sourceLevel, "Biomes", BIOMES_SIZE);
-
-        long lastUpdate = sourceLevel.Get<NbtLong>("LastUpdate")?.Value ?? 0;
-        long inhabitedTime = sourceLevel.Get<NbtLong>("InhabitedTime")?.Value ?? 0;
-
-        // Build the root + Level compound expected by NbtIo::read in old chunk path.
-        // TerrainPopulatedFlags encodes which post-processing passes have been completed.
-        const short TERRAIN_POPULATED_FLAGS = 2046;  // 0x07FE
-        var level = new NbtCompound("Level")
-        {
-            new NbtInt("xPos", newChunkX),
-            new NbtInt("zPos", newChunkZ),
-            new NbtLong("LastUpdate", lastUpdate),
-            new NbtLong("InhabitedTime", inhabitedTime),
-            new NbtByteArray("Blocks", blocks),
-            new NbtByteArray("Data", data),
-            new NbtByteArray("SkyLight", skyLight),
-            new NbtByteArray("BlockLight", blockLight),
-            new NbtByteArray("HeightMap", heightMap),
-            new NbtShort("TerrainPopulatedFlags", TERRAIN_POPULATED_FLAGS),
-            new NbtByteArray("Biomes", biomes),
-        };
-
-        // Xbox chunks don't need entity remapping
-        level.Add(new NbtList("Entities", NbtTagType.Compound));
-        level.Add(new NbtList("TileEntities", NbtTagType.Compound));
 
         return level;
     }
